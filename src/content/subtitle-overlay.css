@@ -1,0 +1,95 @@
+/**
+ * 字幕 Overlay 樣式
+ */
+
+.babel-subtitle-container {
+  /* 定位 */
+  position: fixed;
+  bottom: 50px;
+  left: 0;
+  right: 0;
+  z-index: 2147483647; /* 最大 z-index 確保在最上層 */
+
+  /* 佈局 */
+  display: none; /* 預設隱藏 */
+  justify-content: center;
+  align-items: center;
+  pointer-events: none; /* 不干擾頁面互動 */
+
+  /* 動畫 */
+  transition: opacity 0.2s ease-in-out;
+}
+
+.babel-subtitle {
+  /* 背景與邊框 */
+  background: rgba(0, 0, 0, 0.85);
+  padding: 12px 24px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+
+  /* 文字樣式 */
+  color: #ffffff;
+  font-family: Arial, 'Microsoft YaHei', 'PingFang TC', sans-serif;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: center;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+
+  /* 最大寬度 */
+  max-width: 80%;
+  word-wrap: break-word;
+
+  /* 動畫 */
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 雙層字幕 (原文 + 翻譯) - 預留給 Phase 3 */
+.babel-subtitle-dual {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.babel-subtitle-original {
+  font-size: 20px;
+  opacity: 0.9;
+}
+
+.babel-subtitle-translation {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+/* 響應式設計 */
+@media (max-width: 768px) {
+  .babel-subtitle-container {
+    bottom: 30px;
+  }
+
+  .babel-subtitle {
+    font-size: 18px;
+    padding: 10px 20px;
+    max-width: 90%;
+  }
+}
+
+/* 深色模式支援 */
+@media (prefers-color-scheme: dark) {
+  .babel-subtitle {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+}

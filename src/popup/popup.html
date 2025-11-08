@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Babel Bridge</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>🌉 Babel Bridge</h1>
+        <p class="subtitle">AI 即時字幕與翻譯</p>
+      </header>
+
+      <main>
+        <!-- API Key 設定區 -->
+        <section id="api-key-section" class="section">
+          <h2>OpenAI API Key</h2>
+          <div class="input-group">
+            <input
+              type="password"
+              id="api-key-input"
+              placeholder="sk-..."
+              autocomplete="off"
+            />
+            <button id="verify-btn" class="btn btn-primary">驗證並儲存</button>
+          </div>
+          <p id="api-key-status" class="status"></p>
+        </section>
+
+        <!-- 控制區 -->
+        <section id="control-section" class="section">
+          <h2>字幕控制</h2>
+          <div class="toggle-group">
+            <button id="enable-btn" class="btn btn-large btn-success">啟用字幕</button>
+            <button id="disable-btn" class="btn btn-large btn-danger" disabled>停用字幕</button>
+          </div>
+          <p id="status-text" class="status">未啟用</p>
+        </section>
+
+        <!-- 成本統計區 -->
+        <section id="cost-section" class="section">
+          <h2>本月使用統計</h2>
+          <div class="stats">
+            <div class="stat-item">
+              <span class="stat-label">Whisper:</span>
+              <span id="whisper-cost" class="stat-value">$0.00</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">GPT:</span>
+              <span id="gpt-cost" class="stat-value">$0.00</span>
+            </div>
+            <div class="stat-item stat-total">
+              <span class="stat-label">總計:</span>
+              <span id="total-cost" class="stat-value">$0.00</span>
+            </div>
+          </div>
+          <button id="refresh-stats-btn" class="btn btn-small">重新整理</button>
+        </section>
+      </main>
+
+      <footer>
+        <p class="version">v0.1.0 - Phase 1 (基礎辨識)</p>
+      </footer>
+    </div>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
