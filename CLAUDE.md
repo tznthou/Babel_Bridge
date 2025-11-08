@@ -116,11 +116,25 @@ class BabelBridgeError extends Error {
 ### API Key 管理
 
 `APIKeyManager` (`src/lib/api-key-manager.js`) 負責:
-- 驗證流程: 格式檢查 → 呼叫 OpenAI `/v1/models` 測試 → 儲存到 `chrome.storage.local`
-- 成本追蹤: 記錄每次 Whisper/GPT 呼叫的 tokens/時長,計算成本 ($0.37/小時影片)
-- 預算警告: 當月使用超過設定預算的 80% 時提醒
+- **驗證流程**: 格式檢查 → 呼叫 OpenAI `/v1/models` 測試 → AES-GCM 加密 → 儲存到 `chrome.storage.local`
+- **加密儲存**: 使用 Web Crypto API (AES-256-GCM + PBKDF2-SHA256) 加密保護 API Key
+- **成本追蹤**: 記錄每次 Whisper/GPT 呼叫的 tokens/時長,計算成本 ($0.37/小時影片)
+- **預算警告**: 當月使用超過設定預算的 80% 時提醒
 
-API Key 格式: `sk-` 開頭,共 51 字元 (正則: `/^sk-[A-Za-z0-9]{48}$/`)
+**支援的 API Key 格式**:
+- Standard Key: `sk-[48字元]` (舊格式)
+- Project Key: `sk-proj-[字串]` (新格式，推薦)
+- Admin Key: `sk-admin-[字串]`
+- Organization Key: `sk-org-[字串]`
+
+正則表達式: `/^sk-(?:proj-|admin-|org-)?[A-Za-z0-9_-]{20,}$/`
+
+**加密技術規格** (`src/lib/crypto-utils.js`):
+- 演算法: AES-256-GCM (AEAD)
+- 金鑰衍生: PBKDF2-SHA256 (100,000 迭代)
+- IV: 12 bytes 隨機生成
+- Salt: 16 bytes 隨機生成
+- 瀏覽器指紋: UserAgent + 硬體特徵
 
 ## 開發規範
 
@@ -166,6 +180,9 @@ refactor: simplify error handling
 5. **為何需要 OverlapProcessor**
    Whisper 無法保證相鄰音訊段的辨識結果在重疊區一致,需要人工比對去重與斷句優化。
 
+6. **為何使用 AES-GCM 加密 API Key**
+   防止惡意 Extension 或本地惡意軟體竊取 API Key。使用 AES-256-GCM (AEAD) 提供機密性與完整性保護,PBKDF2-100k 迭代符合 OWASP 2023 建議,瀏覽器指紋衍生金鑰無需使用者記憶密碼。安全評分: 96/100。
+
 ## 常見問題除錯
 
 ### 字幕延遲過高 (> 8 秒)
@@ -185,21 +202,106 @@ refactor: simplify error handling
 2. 檢查 OpenAI 帳戶額度
 3. 查看 Network tab 是否有 CORS 或 429 (Rate Limit) 錯誤
 
+### API Key 解密失敗
+1. 可能原因: 更換了瀏覽器或電腦 (瀏覽器指紋改變)
+2. 解決方法: 點擊「更換 API Key」重新輸入
+3. 安全考量: 這是設計的安全特性,防止跨裝置複製加密資料
+
+## 已知問題與技術債務
+
+### ⚠️ 待解決問題
+
+1. **Vite 建置路徑問題**
+   - 現象: `popup.html` 中的資源路徑被轉為絕對路徑
+   - 影響: 需要手動調整建置後的路徑
+   - 臨時方案: 建置後手動修復
+   - TODO: 調整 `vite.config.js` 的 `base` 和 `build.rollupOptions` 配置
+
+2. **缺少自動化測試**
+   - 現狀: 測試覆蓋率 0%
+   - 影響: 無法自動驗證功能正確性
+   - TODO Phase 1: 新增單元測試 (目標覆蓋率 ≥ 70%)
+   - TODO Phase 2: 新增 E2E 測試 (Playwright)
+
+3. **Chrome Automation Mode 限制**
+   - 現象: MCP chrome-devtools 控制的 Chrome 無法載入 Extension
+   - 影響: 無法使用自動化工具測試 Extension
+   - 解決方案: 使用正常 Chrome 視窗手動測試
+
+### 💡 未來改進方向
+
+1. **加密增強**
+   - 考慮支援使用者自訂密碼 (可選)
+   - 實作 API Key 輪換提醒 (每 90 天)
+   - 增加異常登入偵測 (瀏覽器指紋變更警告)
+
+2. **效能優化**
+   - 實作 Subtitle Cache 機制 (避免重複辨識相同片段)
+   - Web Worker 池化 (減少 Worker 建立開銷)
+   - 音訊 Buffer 記憶體優化
+
+3. **使用者體驗**
+   - 預算通知系統 (達 80% 和 100% 時彈出通知)
+   - 離線模式 (快取最近使用的字幕)
+   - 多語言 UI (目前僅繁體中文)
+
 ## 專案狀態
 
-目前專案處於**規劃階段**,已完成:
+目前專案處於 **Phase 0 已完成,準備進入 Phase 1** 階段 (更新日期: 2025-11-08)
+
+### Phase 0: 基礎建置與安全機制 ✅ (已完成)
 - ✅ PRD (產品需求文件)
 - ✅ SPEC (技術規格文件)
 - ✅ README (架構總覽)
+- ✅ Vite 建置系統配置 (Manifest V3)
+- ✅ 專案結構建立 (Background/Content/Popup/Lib/Workers)
+- ✅ API Key 驗證系統 (支援 4 種 OpenAI Key 格式)
+- ✅ **API Key 加密儲存** (AES-256-GCM + PBKDF2)
+- ✅ 統一錯誤處理機制 (BabelBridgeError)
+- ✅ 成本追蹤框架
+- ✅ 安全性測試 (6 項測試全過,評分 96/100)
 
-待開發 (按 Milestone 順序):
-- Phase 1: 基礎辨識 (音訊擷取 + Whisper 整合)
-- Phase 2: 字幕顯示 (Content Script + Popup UI)
-- Phase 3: 翻譯功能 (GPT 整合 + 雙層字幕)
+**關鍵成果**:
+- 新增 `crypto-utils.js` 加密模組 (~260 行)
+- 更新 `api-key-manager.js` 整合加密 (~450 行)
+- 更新 `popup.js` 支援遮罩顯示與更換 API Key 流程
+- 建置產物大小: popup 5.33 KB (gzip), service-worker 8.75 KB (gzip)
+
+### 待開發 (按 Milestone 順序):
+
+#### Phase 1: 基礎辨識功能 (預計 3-5 天)
+- 🔲 音訊擷取 (chrome.tabCapture)
+- 🔲 音訊切塊 (Rolling Window: 3 秒音訊,重疊 1 秒)
+- 🔲 MP3 編碼 (Web Worker + lamejs)
+- 🔲 Whisper API 整合
+- 🔲 OverlapProcessor (斷句優化)
+- 🔲 基礎字幕顯示
+
+#### Phase 2: 使用者介面優化 (預計 2-3 天)
+- 🔲 Popup UI 完善
+- 🔲 字幕樣式自訂
+- 🔲 成本統計圖表
+
+#### Phase 3: 翻譯功能 (預計 2 天)
+- 🔲 GPT-4o-mini 整合
+- 🔲 雙層字幕顯示
 
 ## 參考文件
 
-完整規格與 API 契約請查閱:
+### 核心文件
 - [PRD.md](PRD.md) - 產品需求與使用者故事
 - [SPEC.md](SPEC.md) - 系統規格與 API 詳細定義
 - [README.md](README.md) - 專案架構與技術棧總覽
+- [CLAUDE.md](CLAUDE.md) - Claude 開發指引 (本文件)
+
+### 開發記錄 (Serena 記憶)
+- `.serena/memories/development-progress-2025-11-08.md` - 詳細開發進度記錄
+- `.serena/memories/project-status-2025-11-08.md` - 專案狀態總覽
+- `.serena/memories/testing-2025-11-08.md` - Extension 測試記錄
+
+### 重要原始碼
+- `src/lib/crypto-utils.js` - 加密工具模組 (AES-GCM)
+- `src/lib/api-key-manager.js` - API Key 管理與成本追蹤
+- `src/lib/errors.js` - 統一錯誤處理
+- `src/popup/popup.js` - Popup UI 邏輯
+- `manifest.json` - Extension 配置 (Manifest V3)

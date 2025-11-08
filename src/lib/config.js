@@ -158,7 +158,9 @@ export const UI_CONFIG = {
  * 儲存鍵名
  */
 export const STORAGE_KEYS = {
-  API_KEY: 'openai_api_key',
+  API_KEY_ENCRYPTED: 'openai_api_key_encrypted', // 加密後的 API Key (AES-GCM)
+  API_KEY_TYPE: 'openai_api_key_type', // 密鑰類型 (Standard/Project/Admin/Org)
+  API_KEY_VERIFIED_AT: 'openai_api_key_verified_at', // 驗證時間戳
   USER_SETTINGS: 'user_settings',
   COST_TRACKING: 'cost_tracking',
   SUBTITLE_CACHE: 'subtitle_cache',

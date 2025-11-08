@@ -5,30 +5,68 @@
  * 1. API Key 格式驗證與測試
  * 2. 成本追蹤 (Whisper + GPT)
  * 3. 預算警告
+ * 4. 加密儲存 (AES-GCM)
  */
 import { BabelBridgeError, ErrorCodes } from './errors.js';
 import { STORAGE_KEYS, COST_CONFIG } from './config.js';
+import { CryptoUtils } from './crypto-utils.js';
 
 export class APIKeyManager {
   /**
-   * API Key 格式正則 (sk- 開頭，48 字元隨機字串)
+   * API Key 格式正則
+   *
+   * 支援的 OpenAI API Key 格式:
+   * - Standard: sk-[字串] (舊格式，48 字元)
+   * - Project: sk-proj-[字串] (新格式，專案密鑰)
+   * - Admin: sk-admin-[字串] (管理員密鑰)
+   * - Organization: sk-org-[字串] (組織密鑰)
+   *
+   * 格式要求:
+   * - 必須以 'sk-' 開頭
+   * - 可選前綴: proj-, admin-, org- 等
+   * - 後續字元支援: 字母、數字、底線、連字號
+   * - 最小長度: 20 字元（不含 sk- 前綴）
    */
-  static API_KEY_PATTERN = /^sk-[A-Za-z0-9]{48}$/;
+  static API_KEY_PATTERN = /^sk-(?:proj-|admin-|org-)?[A-Za-z0-9_-]{20,}$/;
 
   /**
    * 驗證 API Key 格式
+   * @param {string} apiKey - 要驗證的 API Key
+   * @returns {string} 驗證通過的 API Key (已 trim)
+   * @throws {BabelBridgeError} 格式不正確時拋出錯誤
    */
   static validateFormat(apiKey) {
+    // 檢查是否為空值
     if (!apiKey || typeof apiKey !== 'string') {
-      throw new BabelBridgeError(ErrorCodes.API_KEY_INVALID, 'API Key must be a string');
+      throw new BabelBridgeError(
+        ErrorCodes.API_KEY_INVALID,
+        'API Key 不能為空，請輸入有效的 OpenAI API Key'
+      );
     }
 
     const trimmedKey = apiKey.trim();
 
+    // 檢查是否以 sk- 開頭
+    if (!trimmedKey.startsWith('sk-')) {
+      throw new BabelBridgeError(
+        ErrorCodes.API_KEY_INVALID,
+        'API Key 格式錯誤：必須以 "sk-" 開頭'
+      );
+    }
+
+    // 檢查長度
+    if (trimmedKey.length < 30) {
+      throw new BabelBridgeError(
+        ErrorCodes.API_KEY_INVALID,
+        `API Key 格式錯誤：長度過短（當前 ${trimmedKey.length} 字元，至少需要 30 字元）`
+      );
+    }
+
+    // 完整格式驗證
     if (!this.API_KEY_PATTERN.test(trimmedKey)) {
       throw new BabelBridgeError(
         ErrorCodes.API_KEY_INVALID,
-        'Invalid API Key format. Expected: sk-[48 characters]'
+        'API Key 格式錯誤：包含不允許的字元或格式不正確'
       );
     }
 
@@ -37,77 +75,188 @@ export class APIKeyManager {
 
   /**
    * 驗證 API Key 有效性 (呼叫 OpenAI API 測試)
+   * @param {string} apiKey - 要驗證的 API Key
+   * @returns {Promise<{valid: boolean, keyType: string}>} 驗證結果與密鑰類型
+   * @throws {BabelBridgeError} 驗證失敗時拋出錯誤
    */
   static async verifyKey(apiKey) {
     const validatedKey = this.validateFormat(apiKey);
 
+    // 檢測 API Key 類型
+    const keyType = this.detectKeyType(validatedKey);
+
     try {
+      console.log(`[APIKeyManager] 開始驗證 ${keyType} API Key...`);
+
+      // 呼叫 OpenAI API 測試端點
       const response = await fetch('https://api.openai.com/v1/models', {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${validatedKey}`,
+          'Content-Type': 'application/json',
         },
       });
 
+      // 處理各種錯誤情況
       if (!response.ok) {
-        if (response.status === 401) {
-          throw new BabelBridgeError(
-            ErrorCodes.API_KEY_INVALID,
-            'API Key authentication failed'
-          );
-        }
+        const errorData = await response.json().catch(() => ({}));
 
-        throw new BabelBridgeError(
-          ErrorCodes.API_RESPONSE_ERROR,
-          `API verification failed: ${response.status} ${response.statusText}`
-        );
+        switch (response.status) {
+          case 401:
+            throw new BabelBridgeError(
+              ErrorCodes.API_KEY_INVALID,
+              'API Key 無效：OpenAI 認證失敗，請檢查密鑰是否正確',
+              { status: 401, error: errorData }
+            );
+
+          case 403:
+            throw new BabelBridgeError(
+              ErrorCodes.API_KEY_INVALID,
+              'API Key 權限不足：此密鑰無法訪問所需的 API',
+              { status: 403, error: errorData }
+            );
+
+          case 429:
+            throw new BabelBridgeError(
+              ErrorCodes.API_RESPONSE_ERROR,
+              'API 請求頻率超限，請稍後再試',
+              { status: 429, error: errorData }
+            );
+
+          case 500:
+          case 502:
+          case 503:
+            throw new BabelBridgeError(
+              ErrorCodes.API_RESPONSE_ERROR,
+              'OpenAI 服務暫時不可用，請稍後再試',
+              { status: response.status, error: errorData }
+            );
+
+          default:
+            throw new BabelBridgeError(
+              ErrorCodes.API_RESPONSE_ERROR,
+              `API 驗證失敗 (${response.status}): ${response.statusText}`,
+              { status: response.status, error: errorData }
+            );
+        }
       }
 
-      console.log('[APIKeyManager] API Key 驗證成功');
-      return true;
+      // 驗證成功
+      const data = await response.json();
+      console.log(
+        `[APIKeyManager] ✓ ${keyType} API Key 驗證成功 (可用模型數: ${data.data?.length || 0})`
+      );
+
+      return {
+        valid: true,
+        keyType,
+        modelsCount: data.data?.length || 0,
+      };
     } catch (error) {
+      // 已經是 BabelBridgeError 則直接拋出
       if (error instanceof BabelBridgeError) {
         throw error;
       }
 
+      // 網路錯誤
       throw new BabelBridgeError(
         ErrorCodes.API_NETWORK_ERROR,
-        `Network error during verification: ${error.message}`,
+        `網路錯誤：無法連接到 OpenAI API (${error.message})`,
+        { originalError: error.message }
+      );
+    }
+  }
+
+  /**
+   * 檢測 API Key 類型
+   * @param {string} apiKey - API Key
+   * @returns {string} 密鑰類型
+   * @private
+   */
+  static detectKeyType(apiKey) {
+    if (apiKey.startsWith('sk-proj-')) return 'Project Key';
+    if (apiKey.startsWith('sk-admin-')) return 'Admin Key';
+    if (apiKey.startsWith('sk-org-')) return 'Organization Key';
+    return 'Standard Key';
+  }
+
+  /**
+   * 驗證並儲存 API Key（加密儲存）
+   * @param {string} apiKey - 要驗證並儲存的 API Key
+   * @returns {Promise<{success: boolean, keyType: string, modelsCount: number}>}
+   * @throws {BabelBridgeError} 驗證失敗時拋出錯誤
+   */
+  static async verifyAndSave(apiKey) {
+    const validatedKey = this.validateFormat(apiKey);
+    const verifyResult = await this.verifyKey(validatedKey);
+
+    try {
+      // 使用 AES-GCM 加密 API Key
+      const encryptedKey = await CryptoUtils.encrypt(validatedKey);
+
+      // 儲存加密後的資料到 chrome.storage
+      await chrome.storage.local.set({
+        [STORAGE_KEYS.API_KEY_ENCRYPTED]: encryptedKey,
+        [STORAGE_KEYS.API_KEY_TYPE]: verifyResult.keyType,
+        [STORAGE_KEYS.API_KEY_VERIFIED_AT]: Date.now(),
+      });
+
+      console.log(`[APIKeyManager] ${verifyResult.keyType} 已加密並儲存`);
+
+      return {
+        success: true,
+        keyType: verifyResult.keyType,
+        modelsCount: verifyResult.modelsCount,
+      };
+    } catch (error) {
+      throw new BabelBridgeError(
+        ErrorCodes.CRYPTO_ERROR,
+        `API Key 加密儲存失敗: ${error.message}`,
         { originalError: error }
       );
     }
   }
 
   /**
-   * 驗證並儲存 API Key
-   */
-  static async verifyAndSave(apiKey) {
-    const validatedKey = this.validateFormat(apiKey);
-    await this.verifyKey(validatedKey);
-
-    // 儲存到 chrome.storage
-    await chrome.storage.local.set({
-      [STORAGE_KEYS.API_KEY]: validatedKey,
-    });
-
-    console.log('[APIKeyManager] API Key 已儲存');
-    return true;
-  }
-
-  /**
-   * 取得已儲存的 API Key
+   * 取得已儲存的 API Key（自動解密）
+   * @returns {Promise<string|null>} 解密後的 API Key，若無則返回 null
    */
   static async getKey() {
-    const result = await chrome.storage.local.get(STORAGE_KEYS.API_KEY);
-    return result[STORAGE_KEYS.API_KEY] || null;
+    try {
+      const result = await chrome.storage.local.get(STORAGE_KEYS.API_KEY_ENCRYPTED);
+      const encryptedKey = result[STORAGE_KEYS.API_KEY_ENCRYPTED];
+
+      if (!encryptedKey) {
+        console.log('[APIKeyManager] 未找到已儲存的 API Key');
+        return null;
+      }
+
+      // 解密 API Key
+      const decryptedKey = await CryptoUtils.decrypt(encryptedKey);
+      console.log('[APIKeyManager] API Key 解密成功');
+
+      return decryptedKey;
+    } catch (error) {
+      console.error('[APIKeyManager] API Key 解密失敗:', error);
+
+      throw new BabelBridgeError(
+        ErrorCodes.CRYPTO_DECRYPTION_FAILED,
+        `API Key 解密失敗: ${error.message}`,
+        { originalError: error }
+      );
+    }
   }
 
   /**
-   * 刪除 API Key
+   * 刪除 API Key（包含加密資料和相關metadata）
    */
   static async removeKey() {
-    await chrome.storage.local.remove(STORAGE_KEYS.API_KEY);
-    console.log('[APIKeyManager] API Key 已移除');
+    await chrome.storage.local.remove([
+      STORAGE_KEYS.API_KEY_ENCRYPTED,
+      STORAGE_KEYS.API_KEY_TYPE,
+      STORAGE_KEYS.API_KEY_VERIFIED_AT,
+    ]);
+    console.log('[APIKeyManager] API Key 及相關資料已移除');
   }
 
   /**
