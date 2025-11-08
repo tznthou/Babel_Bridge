@@ -34,3 +34,6 @@ coverage/
 
 # AI Assistant memories
 .serena/
+
+# Claude Code personal settings
+.claude/settings.local.json
