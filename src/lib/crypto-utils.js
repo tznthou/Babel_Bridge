@@ -25,13 +25,17 @@ export class CryptoUtils {
    * @private
    */
   static async generateBrowserFingerprint() {
+    // 檢測是否在 Service Worker 環境
+    const isServiceWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
+
     // 收集瀏覽器特徵
     const features = [
       navigator.userAgent,
       navigator.language,
-      screen.width,
-      screen.height,
-      screen.colorDepth,
+      // Service Worker 環境中使用替代值
+      isServiceWorker ? 'sw-env' : (typeof screen !== 'undefined' ? screen.width : 'unknown'),
+      isServiceWorker ? 'sw-env' : (typeof screen !== 'undefined' ? screen.height : 'unknown'),
+      isServiceWorker ? 'sw-env' : (typeof screen !== 'undefined' ? screen.colorDepth : 'unknown'),
       new Date().getTimezoneOffset(),
       navigator.hardwareConcurrency || 'unknown',
       navigator.platform,
