@@ -51,6 +51,9 @@ const CHUNK_CONFIG = {
 // 🚨 Buffer 大小限制（防止記憶體爆炸）
 const MAX_BUFFER_SIZE = AUDIO_CONFIG.SAMPLE_RATE * 30; // 最多 30 秒音訊
 
+// ⏱️ Worker 請求 timeout (防止卡住)
+const WORKER_TIMEOUT = 30000; // 30 秒
+
 /**
  * 初始化 MP3 Encoder Worker
  */
@@ -59,8 +62,9 @@ function initWorker() {
     return;
   }
 
-  // 創建 Worker（Offscreen Document 支援）
-  mp3Worker = new Worker('/src/workers/mp3-encoder.worker.js', { type: 'module' });
+  // 創建 Worker（使用 chrome.runtime.getURL 取得正確路徑）
+  const workerUrl = chrome.runtime.getURL('src/workers/mp3-encoder.worker.js');
+  mp3Worker = new Worker(workerUrl, { type: 'module' });
 
   // 監聽 Worker 訊息
   mp3Worker.onmessage = (event) => {
@@ -70,6 +74,11 @@ function initWorker() {
     if (!pending) {
       console.warn('[Offscreen] 收到未知 requestId 的回應:', requestId);
       return;
+    }
+
+    // 清除 timeout
+    if (pending.timeoutId) {
+      clearTimeout(pending.timeoutId);
     }
 
     pendingRequests.delete(requestId);
@@ -256,9 +265,9 @@ async function handleStartAudioCapture(captureData, sendResponse) {
       // 🚨 防止 buffer 無限增長
       if (chunkBuffer.length >= MAX_BUFFER_SIZE) {
         console.warn('[Offscreen] ⚠️ Buffer 已滿，丟棄舊資料');
-        // 保留最近 10 秒的資料
+        // 🚀 使用 slice 取代 splice，避免 O(n) 移動操作
         const keepSize = AUDIO_CONFIG.SAMPLE_RATE * 10;
-        chunkBuffer.splice(0, chunkBuffer.length - keepSize);
+        chunkBuffer = chunkBuffer.slice(-keepSize);
       }
 
       // 🚀 效能優化：使用循環替代 spread operator，避免堆疊溢出
@@ -331,8 +340,21 @@ async function extractAndEncodeChunk(chunkSamples, overlapSamples, stepSamples) 
 
     // 編碼為 MP3
     const requestId = requestIdCounter++;
+
+    // 🔒 添加 timeout 防止 Worker 卡住
     const resultPromise = new Promise((resolve, reject) => {
       pendingRequests.set(requestId, { resolve, reject });
+
+      // Timeout 處理
+      const timeoutId = setTimeout(() => {
+        if (pendingRequests.has(requestId)) {
+          pendingRequests.delete(requestId);
+          reject(new Error(`Worker timeout after ${WORKER_TIMEOUT}ms`));
+        }
+      }, WORKER_TIMEOUT);
+
+      // 儲存 timeoutId 以便取消
+      pendingRequests.get(requestId).timeoutId = timeoutId;
     });
 
     mp3Worker.postMessage({
@@ -345,6 +367,12 @@ async function extractAndEncodeChunk(chunkSamples, overlapSamples, stepSamples) 
     });
 
     const result = await resultPromise;
+
+    // 清除 timeout
+    const pending = pendingRequests.get(requestId);
+    if (pending && pending.timeoutId) {
+      clearTimeout(pending.timeoutId);
+    }
 
     // 減少 log（只記錄每 10 個 chunk）
     if (chunkIndex % 10 === 0) {
@@ -364,8 +392,8 @@ async function extractAndEncodeChunk(chunkSamples, overlapSamples, stepSamples) 
       },
     });
 
-    // 移除已處理的樣本 (保留重疊部分)
-    chunkBuffer.splice(0, stepSamples);
+    // 🚀 移除已處理的樣本 (使用 slice 取代 splice)
+    chunkBuffer = chunkBuffer.slice(stepSamples);
     chunkIndex++;
   } catch (error) {
     console.error(`[Offscreen] Chunk ${chunkIndex} 編碼失敗:`, error);
