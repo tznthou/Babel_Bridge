@@ -34,6 +34,7 @@ let processorNode = null;
 let chunkBuffer = [];
 let chunkIndex = 0;
 let totalSamples = 0;
+let isProcessingChunk = false; // 🔒 防止並發處理
 
 // === 配置 (暫時硬編碼，之後應從 config.js 導入) ===
 const AUDIO_CONFIG = {
@@ -246,16 +247,16 @@ async function handleStartAudioCapture(captureData, sendResponse) {
     });
 
     // Step 4: 處理音訊資料
-    processorNode.onaudioprocess = async (event) => {
+    processorNode.onaudioprocess = (event) => {
       const channelData = event.inputBuffer.getChannelData(0);
 
       // 加入緩衝區
       chunkBuffer.push(...channelData);
       totalSamples += channelData.length;
 
-      // 檢查是否累積足夠的樣本
-      while (chunkBuffer.length >= chunkSamples) {
-        await extractAndEncodeChunk(chunkSamples, overlapSamples, stepSamples);
+      // 🔒 非阻塞處理：只在沒有正在處理的 chunk 時觸發
+      if (!isProcessingChunk && chunkBuffer.length >= chunkSamples) {
+        processNextChunk(chunkSamples, overlapSamples, stepSamples);
       }
     };
 
@@ -270,6 +271,22 @@ async function handleStartAudioCapture(captureData, sendResponse) {
     console.error('[Offscreen] 音訊擷取失敗:', error);
     stopAudioCapture();
     sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * 非阻塞處理下一個 chunk
+ */
+async function processNextChunk(chunkSamples, overlapSamples, stepSamples) {
+  isProcessingChunk = true;
+
+  try {
+    // 處理所有累積的 chunks（但不阻塞 onaudioprocess）
+    while (chunkBuffer.length >= chunkSamples) {
+      await extractAndEncodeChunk(chunkSamples, overlapSamples, stepSamples);
+    }
+  } finally {
+    isProcessingChunk = false;
   }
 }
 
@@ -384,6 +401,7 @@ function stopAudioCapture() {
   chunkBuffer = [];
   chunkIndex = 0;
   totalSamples = 0;
+  isProcessingChunk = false;
 }
 
 console.log('[Offscreen] Offscreen document 已載入');
