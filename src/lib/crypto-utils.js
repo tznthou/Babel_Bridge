@@ -25,17 +25,18 @@ export class CryptoUtils {
    * @private
    */
   static async generateBrowserFingerprint() {
-    // 檢測是否在 Service Worker 環境
-    const isServiceWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
+    // 為了確保 Popup 和 Service Worker 環境的指紋一致，
+    // 統一使用固定值取代 screen 屬性
+    // TODO: 未來可以考慮使用 chrome.storage.local 儲存裝置 ID
 
-    // 收集瀏覽器特徵
+    // 收集瀏覽器特徵（跨環境一致）
     const features = [
       navigator.userAgent,
       navigator.language,
-      // Service Worker 環境中使用替代值
-      isServiceWorker ? 'sw-env' : (typeof screen !== 'undefined' ? screen.width : 'unknown'),
-      isServiceWorker ? 'sw-env' : (typeof screen !== 'undefined' ? screen.height : 'unknown'),
-      isServiceWorker ? 'sw-env' : (typeof screen !== 'undefined' ? screen.colorDepth : 'unknown'),
+      // 使用固定值確保跨環境一致性
+      'stable-env', // 取代 screen.width
+      'stable-env', // 取代 screen.height
+      'stable-env', // 取代 screen.colorDepth
       new Date().getTimezoneOffset(),
       navigator.hardwareConcurrency || 'unknown',
       navigator.platform,
