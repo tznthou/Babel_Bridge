@@ -250,8 +250,11 @@ async function handleStartAudioCapture(captureData, sendResponse) {
     processorNode.onaudioprocess = (event) => {
       const channelData = event.inputBuffer.getChannelData(0);
 
-      // 加入緩衝區
-      chunkBuffer.push(...channelData);
+      // 🚀 效能優化：使用循環替代 spread operator，避免堆疊溢出
+      // 原本的 push(...channelData) 每次展開 4096 個元素，造成 GC 壓力
+      for (let i = 0; i < channelData.length; i++) {
+        chunkBuffer.push(channelData[i]);
+      }
       totalSamples += channelData.length;
 
       // 🔒 非阻塞處理：只在沒有正在處理的 chunk 時觸發
