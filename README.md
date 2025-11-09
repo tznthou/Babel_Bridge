@@ -378,6 +378,28 @@ MIT License © 2025 Babel Bridge Contributors
 
 ## 🙏 致謝 (Acknowledgments)
 
+本專案的實作過程參考了以下優秀的開源專案，特此致謝：
+
+### 文字相似度與去重演算法
+- [Natural](https://github.com/NaturalNode/natural) (MIT) - Levenshtein Distance 演算法實作
+- [WhisperJAV](https://github.com/meizhong986/WhisperJAV) (MIT) by @meizhong986 - 字幕去重邏輯參考
+- [srt](https://github.com/cdown/srt) (MIT) by @cdown - SRT 字幕處理工具
+
+### 文字分塊與 Overlap 管理
+- [tokenx](https://github.com/johannschopplich/tokenx) (MIT) by @johannschopplich - 文字分塊與 overlap 策略參考
+
+### 語音辨識整合
+- [Flowise](https://github.com/FlowiseAI/Flowise) (Apache 2.0) - Whisper API 整合模式參考
+
+### 架構靈感
+- [DashPlayer](https://github.com/solidSpoon/DashPlayer) (AGPL-3.0) by @solidSpoon - Whisper API 整合思路啟發（僅參考架構概念，未使用程式碼）
+
+---
+
+**授權說明**：
+- 本專案採用 **MIT License**
+- 所有引用的 MIT/Apache 2.0 專案皆保留原版權聲明
+- AGPL-3.0 專案僅作為架構參考，未使用其程式碼
 - **OpenAI**: 提供強大的 Whisper 與 GPT API
 - **聾啞社群**: 給予專案靈感與回饋
 - **開源貢獻者**: 讓這個專案更加完善

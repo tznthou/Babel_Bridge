@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OverlapProcessor 測試 Demo - Babel Bridge</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      padding: 30px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 2em;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      opacity: 0.9;
+      font-size: 1.1em;
+    }
+
+    .content {
+      padding: 30px;
+    }
+
+    .test-section {
+      margin-bottom: 30px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+    }
+
+    .test-section h2 {
+      color: #333;
+      margin-bottom: 15px;
+      font-size: 1.3em;
+    }
+
+    .test-section p {
+      color: #666;
+      margin-bottom: 15px;
+      line-height: 1.6;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.3s;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button.secondary {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+
+    button.clear {
+      background: #6c757d;
+    }
+
+    .output {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 20px;
+      border-radius: 8px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      max-height: 500px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .result-item {
+      margin-bottom: 15px;
+      padding: 15px;
+      border-radius: 6px;
+      border-left: 4px solid transparent;
+    }
+
+    .result-item.success {
+      background: #d4edda;
+      border-left-color: #28a745;
+      color: #155724;
+    }
+
+    .result-item.error {
+      background: #f8d7da;
+      border-left-color: #dc3545;
+      color: #721c24;
+    }
+
+    .result-item.info {
+      background: #d1ecf1;
+      border-left-color: #17a2b8;
+      color: #0c5460;
+    }
+
+    .result-item strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 1.1em;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-top: 20px;
+    }
+
+    .stat-card {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      border: 1px solid #e0e0e0;
+      text-align: center;
+    }
+
+    .stat-card .number {
+      font-size: 2em;
+      font-weight: bold;
+      color: #667eea;
+    }
+
+    .stat-card .label {
+      color: #666;
+      font-size: 0.9em;
+      margin-top: 5px;
+    }
+
+    .code-block {
+      background: #2d2d2d;
+      color: #f8f8f2;
+      padding: 15px;
+      border-radius: 6px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px;
+      overflow-x: auto;
+      margin: 10px 0;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.85em;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+
+    .badge.success { background: #28a745; color: white; }
+    .badge.error { background: #dc3545; color: white; }
+    .badge.warning { background: #ffc107; color: #333; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .loading {
+      animation: pulse 1.5s infinite;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📐 OverlapProcessor 測試 Demo</h1>
+      <p>Babel Bridge - 音訊段重疊處理與斷句優化</p>
+    </div>
+
+    <div class="content">
+      <!-- 測試區塊 1: 基礎功能 -->
+      <div class="test-section">
+        <h2>🔧 測試 1: 基礎功能</h2>
+        <p>測試 OverlapProcessor 的基本初始化與單段音訊處理</p>
+        <div class="controls">
+          <button onclick="runTest1()">執行測試</button>
+        </div>
+        <div id="output1" class="output"></div>
+      </div>
+
+      <!-- 測試區塊 2: 重疊區去重 -->
+      <div class="test-section">
+        <h2>🔄 測試 2: 重疊區去重</h2>
+        <p>測試三段連續音訊的重疊區域去重功能（Rolling Window 策略）</p>
+        <div class="controls">
+          <button onclick="runTest2()">執行測試</button>
+        </div>
+        <div id="output2" class="output"></div>
+      </div>
+
+      <!-- 測試區塊 3: 句子合併 -->
+      <div class="test-section">
+        <h2>📝 測試 3: 句子合併</h2>
+        <p>測試多語言斷句規則與破碎句子合併功能</p>
+        <div class="controls">
+          <button onclick="runTest3()">執行測試</button>
+        </div>
+        <div id="output3" class="output"></div>
+      </div>
+
+      <!-- 測試區塊 4: 文字相似度 -->
+      <div class="test-section">
+        <h2>🎯 測試 4: 文字相似度計算</h2>
+        <p>測試 Levenshtein Distance 演算法與相似度計算</p>
+        <div class="controls">
+          <button onclick="runTest4()">執行測試</button>
+        </div>
+        <div id="output4" class="output"></div>
+      </div>
+
+      <!-- 全部測試 -->
+      <div class="test-section">
+        <h2>🚀 完整測試套件</h2>
+        <p>執行所有測試並顯示統計結果</p>
+        <div class="controls">
+          <button onclick="runAllTests()">執行全部測試</button>
+          <button class="clear" onclick="clearAllOutputs()">清除所有輸出</button>
+        </div>
+        <div id="stats" class="stats" style="display: none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { OverlapProcessor } from '../src/background/subtitle-processor.js'
+    import { calculateSimilarity, levenshteinDistance, normalizeText } from '../src/lib/text-similarity.js'
+    import { LanguageRules } from '../src/lib/language-rules.js'
+
+    // 全域變數
+    window.OverlapProcessor = OverlapProcessor
+    window.calculateSimilarity = calculateSimilarity
+    window.levenshteinDistance = levenshteinDistance
+    window.normalizeText = normalizeText
+    window.LanguageRules = LanguageRules
+
+    let testResults = {
+      passed: 0,
+      failed: 0,
+      total: 0
+    }
+
+    // 測試 1: 基礎功能
+    window.runTest1 = function() {
+      const output = document.getElementById('output1')
+      output.innerHTML = ''
+
+      const log = (msg, color = '#d4d4d4') => {
+        output.innerHTML += `<span style="color: ${color};">${msg}</span>\n`
+      }
+
+      try {
+        log('🔧 開始測試基礎功能\n', '#4caf50')
+
+        // 初始化
+        log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '#666')
+        log('📦 步驟 1: 初始化 OverlapProcessor', '#ff9800')
+        const processor = new OverlapProcessor({ debug: false })
+        log('   配置:', '#aaa')
+        log(`     - 重疊時長: ${processor.config.overlapDuration}ms`, '#ccc')
+        log(`     - 相似度閾值: ${processor.config.similarityThreshold}`, '#ccc')
+        log(`     - 合併時間間隔: ${processor.config.mergeTimeGap}s`, '#ccc')
+        log('   ✅ 初始化成功\n', '#4caf50')
+
+        // 處理第一段音訊
+        const chunk1 = {
+          text: 'Hello world',
+          segments: [
+            { id: 0, start: 0.0, end: 2.0, text: 'Hello world' }
+          ]
+        }
+
+        log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '#666')
+        log('🎬 步驟 2: 處理第一段音訊 (0.0s)', '#ff9800')
+        log('   輸入:', '#aaa')
+        log(`     - Segments 數量: ${chunk1.segments.length}`, '#ccc')
+        log(`     - 文字: "${chunk1.segments[0].text}"`, '#ccc')
+        log(`     - 時間範圍: ${chunk1.segments[0].start}s - ${chunk1.segments[0].end}s`, '#ccc')
+
+        const result = processor.process(chunk1, 0.0)
+
+        log('   處理結果:', '#aaa')
+        log(`     - 輸出 Segments: ${result.length}`, '#4caf50')
+        log(`     - 文字: "${result[0].text}"`, '#4caf50')
+        log(`     - 絕對時間: ${result[0].start.toFixed(1)}s - ${result[0].end.toFixed(1)}s`, '#4caf50')
+        log('   ✅ 第一段音訊處理完成\n', '#4caf50')
+
+        // 驗證狀態
+        log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '#666')
+        log('🔍 步驟 3: 驗證內部狀態', '#ff9800')
+        log(`   previousSegments: ${processor.previousSegments ? processor.previousSegments.length : 0} 個`, '#ccc')
+        log(`   processedSegments: ${processor.processedSegments.length} 個`, '#ccc')
+        log(`   chunkCount: ${processor.chunkCount}`, '#ccc')
+
+        // 最終判定
+        const passed = result.length === 1 &&
+                      result[0].text === 'Hello world' &&
+                      result[0].start === 0.0 &&
+                      result[0].end === 2.0 &&
+                      processor.previousSegments !== null
+
+        log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '#666')
+        log('📊 測試結果:', '#ff9800')
+        log(`   Segment 數量: ${result.length === 1 ? '✅ 正確' : '❌ 錯誤'}`, result.length === 1 ? '#4caf50' : '#f44336')
+        log(`   文字內容: ${result[0].text === 'Hello world' ? '✅ 正確' : '❌ 錯誤'}`, result[0].text === 'Hello world' ? '#4caf50' : '#f44336')
+        log(`   時間戳調整: ${result[0].start === 0.0 && result[0].end === 2.0 ? '✅ 正確' : '❌ 錯誤'}`, result[0].start === 0.0 && result[0].end === 2.0 ? '#4caf50' : '#f44336')
+        log(`   狀態保存: ${processor.previousSegments !== null ? '✅ 正確' : '❌ 錯誤'}`, processor.previousSegments !== null ? '#4caf50' : '#f44336')
+
+        if (passed) {
+          log('\n✅ 基礎功能測試通過！', '#4caf50')
+          testResults.passed++
+        } else {
+          log('\n❌ 基礎功能測試失敗', '#f44336')
+          testResults.failed++
+        }
+        testResults.total++
+
+      } catch (error) {
+        log(`❌ 錯誤: ${error.message}`, '#f44336')
+        log(error.stack, '#f44336')
+        testResults.failed++
+        testResults.total++
+      }
+    }
+
+    // 測試 2: 重疊區去重
+    window.runTest2 = function() {
+      const output = document.getElementById('output2')
+      output.innerHTML = ''
+
+      const log = (msg, color = '#d4d4d4') => {
+        output.innerHTML += `<span style="color: ${color};">${msg}</span>\n`
+      }
+
+      try {
+        const processor = new OverlapProcessor({ debug: false })
+
+        log('📊 開始測試三段連續音訊的去重處理\n', '#4caf50')
+
+        // Chunk 1: 0-3s
+        const chunk1 = {
+          segments: [
+            { id: 0, start: 0.0, end: 2.0, text: '今天天氣很好' },
+            { id: 1, start: 2.0, end: 3.0, text: '我們去公園' }
+          ]
+        }
+
+        log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '#666')
+        log('🎬 Chunk 1: 音訊 0.0s - 3.0s', '#ff9800')
+        log('   輸入 segments:', '#aaa')
+        chunk1.segments.forEach(s => {
+          log(`     - [${s.start.toFixed(1)}s-${s.end.toFixed(1)}s] "${s.text}"`, '#ccc')
+        })
+
+        const result1 = processor.process(chunk1, 0.0)
+        log(`   ✅ 處理結果: ${result1.length} 個 segments (第一段，全部保留)\n`, '#4caf50')
+
+        // Chunk 2: 2-5s (重疊 2-3s)
+        const chunk2 = {
+          segments: [
+            { id: 0, start: 0.0, end: 1.0, text: '我們去公園' },  // 重複
+            { id: 1, start: 1.0, end: 3.0, text: '玩遊戲' }
+          ]
+        }
+
+        log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '#666')
+        log('🎬 Chunk 2: 音訊 2.0s - 5.0s (重疊區 2.0s-3.0s)', '#ff9800')
+        log('   輸入 segments:', '#aaa')
+        chunk2.segments.forEach(s => {
+          const absStart = s.start + 2.0
+          const absEnd = s.end + 2.0
+          log(`     - [${absStart.toFixed(1)}s-${absEnd.toFixed(1)}s] "${s.text}"`, '#ccc')
+        })
+
+        const result2 = processor.process(chunk2, 2.0)
+        log(`   🔍 重疊區分析: 發現 "${chunk2.segments[0].text}" 與前一段重複`, '#ffc107')
+        log(`   ✅ 去重結果: ${result2.length} 個 segments (過濾掉 ${chunk2.segments.length - result2.length} 個重複)\n`, '#4caf50')
+
+        // Chunk 3: 4-7s (重疊 4-5s)
+        const chunk3 = {
+          segments: [
+            { id: 0, start: 0.0, end: 1.0, text: '玩遊戲' },  // 重複
+            { id: 1, start: 1.0, end: 3.0, text: '然後回家' }
+          ]
+        }
+
+        log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '#666')
+        log('🎬 Chunk 3: 音訊 4.0s - 7.0s (重疊區 4.0s-5.0s)', '#ff9800')
+        log('   輸入 segments:', '#aaa')
+        chunk3.segments.forEach(s => {
+          const absStart = s.start + 4.0
+          const absEnd = s.end + 4.0
+          log(`     - [${absStart.toFixed(1)}s-${absEnd.toFixed(1)}s] "${s.text}"`, '#ccc')
+        })
+
+        const result3 = processor.process(chunk3, 4.0)
+        log(`   🔍 重疊區分析: 發現 "${chunk3.segments[0].text}" 與前一段重複`, '#ffc107')
+        log(`   ✅ 去重結果: ${result3.length} 個 segments (過濾掉 ${chunk3.segments.length - result3.length} 個重複)\n`, '#4caf50')
+
+        // 最終結果
+        const allSegments = processor.getAllSegments()
+        log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '#666')
+        log('📋 最終完整字幕 (已去重):', '#4caf50')
+
+        // 檢查是否有重複
+        const texts = allSegments.map(s => s.text)
+        const uniqueTexts = new Set(texts)
+        const hasDuplicates = texts.length !== uniqueTexts.size
+
+        allSegments.forEach((seg, idx) => {
+          log(`   ${idx + 1}. [${seg.start.toFixed(1)}s-${seg.end.toFixed(1)}s] "${seg.text}"`, '#4caf50')
+        })
+
+        log('', '')
+        log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '#666')
+        log('📊 統計結果:', '#ff9800')
+        log(`   總 segments: ${allSegments.length}`, '#ccc')
+        log(`   唯一文字: ${uniqueTexts.size}`, '#ccc')
+        log(`   有重複: ${hasDuplicates ? '是' : '否'}`, hasDuplicates ? '#f44336' : '#4caf50')
+
+        if (!hasDuplicates) {
+          log('\n✅ 測試通過！去重功能正常運作', '#4caf50')
+          testResults.passed++
+        } else {
+          log('\n❌ 測試失敗：發現重複內容', '#f44336')
+          testResults.failed++
+        }
+        testResults.total++
+
+      } catch (error) {
+        log(`❌ 錯誤: ${error.message}`, '#f44336')
+        testResults.failed++
+        testResults.total++
+      }
+    }
+
+    // 移除詳細模式（已整合到主測試中）
+    window.runTest2Detailed = window.runTest2
+
+    // 測試 3: 句子合併
+    window.runTest3 = function() {
+      const output = document.getElementById('output3')
+      output.innerHTML = ''
+
+      const log = (msg, color = '#d4d4d4') => {
+        output.innerHTML += `<span style="color: ${color};">${msg}</span>\n`
+      }
+
+      try {
+        const processor = new OverlapProcessor({ debug: false })
+
+        log('📝 開始測試多語言斷句與合併\n', '#4caf50')
+
+        // 中文測試
+        const zhSegments = [
+          { start: 0.0, end: 1.0, text: '今天天氣，' },
+          { start: 1.0, end: 2.0, text: '很好' },
+          { start: 2.5, end: 3.5, text: '我們去公園。' }
+        ]
+
+        log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '#666')
+        log('🇹🇼 中文測試 (zh-TW)', '#ff9800')
+        log('   原始 segments:', '#aaa')
+        zhSegments.forEach((s, i) => {
+          log(`     ${i + 1}. "${s.text}"`, '#ccc')
+        })
+
+        const zhMerged = processor.mergeBrokenSentences(zhSegments, 'zh-TW')
+        log('   合併結果:', '#aaa')
+        zhMerged.forEach((seg, idx) => {
+          log(`     ${idx + 1}. "${seg.text}" [${seg.start.toFixed(1)}s-${seg.end.toFixed(1)}s]`, '#4caf50')
+        })
+        log(`   原始: ${zhSegments.length} → 合併後: ${zhMerged.length}\n`, '#ffc107')
+
+        // 英文測試
+        const enSegments = [
+          { start: 0.0, end: 1.0, text: 'The weather is good,' },
+          { start: 1.0, end: 2.0, text: 'today' },
+          { start: 2.5, end: 3.5, text: 'We go to park.' }
+        ]
+
+        log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '#666')
+        log('🇺🇸 英文測試 (en)', '#ff9800')
+        log('   原始 segments:', '#aaa')
+        enSegments.forEach((s, i) => {
+          log(`     ${i + 1}. "${s.text}"`, '#ccc')
+        })
+
+        const enMerged = processor.mergeBrokenSentences(enSegments, 'en')
+        log('   合併結果:', '#aaa')
+        enMerged.forEach((seg, idx) => {
+          log(`     ${idx + 1}. "${seg.text}" [${seg.start.toFixed(1)}s-${seg.end.toFixed(1)}s]`, '#4caf50')
+        })
+        log(`   原始: ${enSegments.length} → 合併後: ${enMerged.length}\n`, '#ffc107')
+
+        const expectedZh = zhMerged.length === 2  // "今天天氣，很好" + "我們去公園。"
+        const expectedEn = enMerged.length === 2  // "The weather is good, today" + "We go to park."
+
+        log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '#666')
+        log('📊 測試結果:', '#ff9800')
+        log(`   中文合併: ${expectedZh ? '✅ 正確' : '❌ 錯誤'}`, expectedZh ? '#4caf50' : '#f44336')
+        log(`   英文合併: ${expectedEn ? '✅ 正確' : '❌ 錯誤'}`, expectedEn ? '#4caf50' : '#f44336')
+
+        if (expectedZh && expectedEn) {
+          log('\n✅ 句子合併測試通過！', '#4caf50')
+          testResults.passed++
+        } else {
+          log('\n❌ 句子合併測試失敗', '#f44336')
+          testResults.failed++
+        }
+        testResults.total++
+
+      } catch (error) {
+        log(`❌ 錯誤: ${error.message}`, '#f44336')
+        testResults.failed++
+        testResults.total++
+      }
+    }
+
+    // 測試 4: 文字相似度
+    window.runTest4 = function() {
+      const output = document.getElementById('output4')
+      output.innerHTML = ''
+
+      const log = (msg, color = '#d4d4d4') => {
+        output.innerHTML += `<span style="color: ${color};">${msg}</span>\n`
+      }
+
+      try {
+        log('🎯 開始測試文字相似度演算法\n', '#4caf50')
+
+        // Levenshtein Distance 測試
+        const tests = [
+          { str1: 'hello', str2: 'hello', expected: 0, name: '完全相同' },
+          { str1: 'kitten', str2: 'sitting', expected: 3, name: '多重操作' },
+          { str1: 'abc', str2: 'xyz', expected: 3, name: '完全不同' },
+        ]
+
+        log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '#666')
+        log('📏 Levenshtein Distance (編輯距離)', '#ff9800')
+        let allPassed = true
+
+        tests.forEach(test => {
+          const result = levenshteinDistance(test.str1, test.str2)
+          const passed = result === test.expected
+          const icon = passed ? '✅' : '❌'
+          const color = passed ? '#4caf50' : '#f44336'
+          log(`   ${icon} ${test.name}:`, color)
+          log(`      "${test.str1}" → "${test.str2}"`, '#ccc')
+          log(`      編輯距離: ${result} (期望: ${test.expected})`, color)
+          if (!passed) allPassed = false
+        })
+
+        // 相似度計算測試
+        log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '#666')
+        log('📊 相似度計算 (0-1 範圍)', '#ff9800')
+
+        const simTests = [
+          { str1: 'hello', str2: 'hello', name: '完全相同', expectedMin: 1.0 },
+          { str1: 'Hello, World!', str2: 'hello world', name: '忽略標點大小寫', expectedMin: 1.0 },
+          { str1: 'abc', str2: 'xyz', name: '完全不同', expectedMax: 0.3 },
+          { str1: '今天天氣很好', str2: '今天天氣好好', name: '輕微差異', expectedMin: 0.8 }
+        ]
+
+        let simPassed = true
+        simTests.forEach(test => {
+          const sim = calculateSimilarity(test.str1, test.str2)
+          const simPercent = (sim * 100).toFixed(1)
+
+          let passed
+          if (test.expectedMin !== undefined) {
+            passed = sim >= test.expectedMin
+          } else {
+            passed = sim <= test.expectedMax
+          }
+
+          const icon = passed ? '✅' : '❌'
+          const color = passed ? '#4caf50' : '#f44336'
+
+          log(`   ${icon} ${test.name}:`, color)
+          log(`      "${test.str1}"`, '#ccc')
+          log(`      "${test.str2}"`, '#ccc')
+          log(`      相似度: ${simPercent}%`, color)
+
+          if (!passed) simPassed = false
+        })
+
+        log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '#666')
+        log('📊 測試結果:', '#ff9800')
+        log(`   編輯距離: ${allPassed ? '✅ 通過' : '❌ 失敗'}`, allPassed ? '#4caf50' : '#f44336')
+        log(`   相似度計算: ${simPassed ? '✅ 通過' : '❌ 失敗'}`, simPassed ? '#4caf50' : '#f44336')
+
+        if (allPassed && simPassed) {
+          log('\n✅ 文字相似度測試通過！', '#4caf50')
+          testResults.passed++
+        } else {
+          log('\n❌ 文字相似度測試失敗', '#f44336')
+          testResults.failed++
+        }
+        testResults.total++
+
+      } catch (error) {
+        log(`❌ 錯誤: ${error.message}`, '#f44336')
+        testResults.failed++
+        testResults.total++
+      }
+    }
+
+    // 執行全部測試
+    window.runAllTests = function() {
+      testResults = { passed: 0, failed: 0, total: 0 }
+
+      runTest1()
+      setTimeout(() => runTest2(), 100)
+      setTimeout(() => runTest3(), 200)
+      setTimeout(() => runTest4(), 300)
+
+      setTimeout(() => {
+        const stats = document.getElementById('stats')
+        stats.style.display = 'grid'
+        stats.innerHTML = `
+          <div class="stat-card">
+            <div class="number" style="color: #4caf50;">${testResults.passed}</div>
+            <div class="label">通過</div>
+          </div>
+          <div class="stat-card">
+            <div class="number" style="color: #f44336;">${testResults.failed}</div>
+            <div class="label">失敗</div>
+          </div>
+          <div class="stat-card">
+            <div class="number" style="color: #667eea;">${testResults.total}</div>
+            <div class="label">總計</div>
+          </div>
+          <div class="stat-card">
+            <div class="number" style="color: #ff9800;">${testResults.total > 0 ? ((testResults.passed / testResults.total) * 100).toFixed(0) : 0}%</div>
+            <div class="label">通過率</div>
+          </div>
+        `
+      }, 500)
+    }
+
+    // 清除所有輸出
+    window.clearAllOutputs = function() {
+      document.getElementById('output1').innerHTML = ''
+      document.getElementById('output2').innerHTML = ''
+      document.getElementById('output3').innerHTML = ''
+      document.getElementById('output4').innerHTML = ''
+      document.getElementById('stats').style.display = 'none'
+      testResults = { passed: 0, failed: 0, total: 0 }
+    }
+
+    console.log('✅ OverlapProcessor Demo 載入完成')
+    console.log('可用的全域函數: runTest1, runTest2, runTest3, runTest4, runAllTests')
+  </script>
+</body>
+</html>

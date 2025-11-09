@@ -113,6 +113,31 @@ export const SUBTITLE_CONFIG = {
 };
 
 /**
+ * OverlapProcessor 配置
+ *
+ * 用於音訊段重疊處理與斷句優化
+ */
+export const OVERLAP_CONFIG = {
+  // 重疊區時長 (毫秒) - 與 CHUNK_CONFIG.OVERLAP_DURATION 對應
+  overlapDuration: 1000,
+
+  // 文字相似度閾值 (0-1)
+  // 當文字相似度 > 此值且時間戳重疊 > 50% 時，判定為重複
+  similarityThreshold: 0.8,
+
+  // 句子合併時間間隔閾值 (秒)
+  // 當相鄰 segments 時間間隔 < 此值時，可能合併
+  mergeTimeGap: 0.3,
+
+  // 文字比對最大長度（效能優化）
+  // 只比對文字的前 N 個字元以加速相似度計算
+  maxCompareLength: 100,
+
+  // Debug 模式
+  debug: false,
+};
+
+/**
  * 成本計算配置 (USD)
  */
 export const COST_CONFIG = {

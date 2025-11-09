@@ -10,10 +10,11 @@ import { AudioCapture } from './audio-capture.js';
 import { AudioChunker } from './audio-chunker.js';
 import { MP3Encoder } from './mp3-encoder.js';
 import { WhisperClient } from './whisper-client.js';
+import { OverlapProcessor } from './subtitle-processor.js';
 import { APIKeyManager } from '../lib/api-key-manager.js';
 import { ErrorHandler } from '../lib/error-handler.js';
 import { BabelBridgeError, ErrorCodes } from '../lib/errors.js';
-import { MessageTypes } from '../lib/config.js';
+import { MessageTypes, OVERLAP_CONFIG } from '../lib/config.js';
 
 /**
  * 全域狀態管理
@@ -24,6 +25,7 @@ class SubtitleService {
     this.audioChunker = null;
     this.mp3Encoder = null;
     this.whisperClient = null;
+    this.overlapProcessor = null;
 
     this.isActive = false;
     this.currentTabId = null;
@@ -42,6 +44,9 @@ class SubtitleService {
     // 初始化 Whisper Client
     this.whisperClient = new WhisperClient();
     await this.whisperClient.init();
+
+    // 初始化 OverlapProcessor (去重與斷句優化)
+    this.overlapProcessor = new OverlapProcessor(OVERLAP_CONFIG);
 
     console.log('[SubtitleService] 服務初始化完成');
   }
@@ -129,18 +134,34 @@ class SubtitleService {
         segments: transcription.segments.length,
       });
 
-      // 3. 記錄成本
+      // 3. OverlapProcessor 處理 (去重與斷句優化)
+      const processedSegments = this.overlapProcessor.process(
+        transcription,
+        chunk.startTime
+      );
+
+      console.log(`[SubtitleService] OverlapProcessor 處理完成`, {
+        originalSegments: transcription.segments.length,
+        processedSegments: processedSegments.length,
+        filtered: transcription.segments.length - processedSegments.length,
+      });
+
+      // 4. 記錄成本
       await APIKeyManager.trackWhisperUsage(chunk.endTime - chunk.startTime);
 
-      // 4. 發送字幕到 Content Script
-      await this.sendSubtitleToContent({
-        chunkIndex: chunk.index,
-        startTime: chunk.startTime,
-        endTime: chunk.endTime,
-        text: transcription.text,
-        segments: transcription.segments,
-        language: transcription.language,
-      });
+      // 5. 發送字幕到 Content Script (只發送新的 segments)
+      if (processedSegments.length > 0) {
+        await this.sendSubtitleToContent({
+          chunkIndex: chunk.index,
+          startTime: chunk.startTime,
+          endTime: chunk.endTime,
+          text: transcription.text,
+          segments: processedSegments,
+          language: transcription.language,
+        });
+      } else {
+        console.log('[SubtitleService] 無新字幕 (重複區已過濾)');
+      }
     } catch (error) {
       await ErrorHandler.handle(error, {
         operation: 'process_chunk',
@@ -182,6 +203,10 @@ class SubtitleService {
     if (this.audioCapture) {
       this.audioCapture.stop();
       this.audioCapture = null;
+    }
+
+    if (this.overlapProcessor) {
+      this.overlapProcessor.reset();
     }
 
     this.currentTabId = null;
