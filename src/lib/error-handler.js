@@ -13,7 +13,7 @@ export class ErrorHandler {
    */
   static async handle(error, context = {}) {
     // 轉換為 BabelBridgeError
-    const babelError = this.normalizError(error);
+    const babelError = this.normalizeError(error);
 
     // 記錄錯誤
     this.logError(babelError, context);

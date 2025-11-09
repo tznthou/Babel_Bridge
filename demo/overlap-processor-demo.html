@@ -281,13 +281,14 @@
 
       <!-- 全部測試 -->
       <div class="test-section">
-        <h2>🚀 完整測試套件</h2>
-        <p>執行所有測試並顯示統計結果</p>
+        <h2>🚀 Phase 1 完整測試套件</h2>
+        <p>執行所有核心演算法測試並顯示統計結果（測試 1-4）</p>
         <div class="controls">
-          <button onclick="runAllTests()">執行全部測試</button>
+          <button onclick="runAllCoreTests()">🎯 一鍵執行完整測試</button>
           <button class="clear" onclick="clearAllOutputs()">清除所有輸出</button>
         </div>
         <div id="stats" class="stats" style="display: none;"></div>
+        <div id="finalResult" style="margin-top: 20px; display: none;"></div>
       </div>
     </div>
   </div>
@@ -841,9 +842,14 @@
       syncTestOverlay.clear()
     }
 
-    // 執行全部測試
-    window.runAllTests = function() {
+    // 執行所有核心測試 (測試 1-4)
+    window.runAllCoreTests = function() {
       testResults = { passed: 0, failed: 0, total: 0 }
+
+      // 清空之前的輸出
+      clearAllOutputs()
+
+      console.log('🚀 開始執行 Phase 1 完整測試套件...')
 
       runTest1()
       setTimeout(() => runTest2(), 100)
@@ -852,7 +858,14 @@
 
       setTimeout(() => {
         const stats = document.getElementById('stats')
+        const finalResult = document.getElementById('finalResult')
+
         stats.style.display = 'grid'
+        finalResult.style.display = 'block'
+
+        const passRate = testResults.total > 0 ? ((testResults.passed / testResults.total) * 100).toFixed(0) : 0
+        const allPassed = testResults.passed === testResults.total
+
         stats.innerHTML = `
           <div class="stat-card">
             <div class="number" style="color: #4caf50;">${testResults.passed}</div>
@@ -867,12 +880,42 @@
             <div class="label">總計</div>
           </div>
           <div class="stat-card">
-            <div class="number" style="color: #ff9800;">${testResults.total > 0 ? ((testResults.passed / testResults.total) * 100).toFixed(0) : 0}%</div>
+            <div class="number" style="color: #ff9800;">${passRate}%</div>
             <div class="label">通過率</div>
           </div>
         `
+
+        // 最終判定
+        if (allPassed) {
+          finalResult.innerHTML = `
+            <div style="background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
+              <h3 style="color: #155724; margin: 0 0 10px 0;">✅ 所有核心演算法測試通過！</h3>
+              <p style="color: #155724; margin: 0; line-height: 1.6;">
+                🎉 恭喜！所有測試 (${testResults.total}/${testResults.total}) 都成功通過。<br>
+                📋 <strong>下一步</strong>: 請繼續進行「實際 Extension 測試」，驗證完整音訊處理管線。<br>
+                📖 參考文件: <code>TESTING_PHASE1.md</code> § 階段 2-7
+              </p>
+            </div>
+          `
+          console.log('✅ Phase 1 核心測試全部通過！')
+        } else {
+          finalResult.innerHTML = `
+            <div style="background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%); padding: 20px; border-radius: 8px; border-left: 4px solid #dc3545;">
+              <h3 style="color: #721c24; margin: 0 0 10px 0;">❌ 測試未全部通過</h3>
+              <p style="color: #721c24; margin: 0; line-height: 1.6;">
+                通過: ${testResults.passed}/${testResults.total} (${passRate}%)<br>
+                失敗: ${testResults.failed} 個測試<br>
+                請檢查上方紅色標記的測試項目，修復問題後重新測試。
+              </p>
+            </div>
+          `
+          console.error(`❌ 有 ${testResults.failed} 個測試失敗`)
+        }
       }, 500)
     }
+
+    // 保留舊函數名稱向後相容
+    window.runAllTests = window.runAllCoreTests
 
     // 清除所有輸出
     window.clearAllOutputs = function() {

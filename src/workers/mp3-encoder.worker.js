@@ -76,9 +76,9 @@ function encodeMP3(samples) {
  * Worker 訊息處理
  */
 self.addEventListener('message', (event) => {
-  const { id, type, data } = event.data;
+  const { requestId, type, data } = event.data;
 
-  if (type === 'encode') {
+  if (type === 'ENCODE') {
     try {
       const startTime = performance.now();
 
@@ -92,8 +92,8 @@ self.addEventListener('message', (event) => {
 
       // 回傳結果
       self.postMessage({
-        id,
-        type: 'success',
+        requestId,
+        type: 'ENCODE_COMPLETE',
         data: {
           blob,
           size: blob.size,
@@ -102,22 +102,19 @@ self.addEventListener('message', (event) => {
       });
 
       console.log(`[MP3 Worker] 編碼完成`, {
+        requestId,
         inputSamples: data.samples.length,
         outputSize: blob.size,
         duration: duration.toFixed(2) + 'ms',
       });
     } catch (error) {
       self.postMessage({
-        id,
-        type: 'error',
-        error: {
-          message: error.message,
-          stack: error.stack,
-        },
+        requestId,
+        type: 'ENCODE_ERROR',
+        error: error.message,
       });
     }
   }
 });
 
-// Worker 就緒通知
-self.postMessage({ type: 'ready' });
+console.log('[MP3 Worker] Worker 已就緒');

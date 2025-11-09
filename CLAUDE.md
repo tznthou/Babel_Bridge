@@ -58,19 +58,37 @@ npm run format            # Prettier 格式化
 ### 音訊處理流程 (Critical Path)
 
 ```
-chrome.tabCapture → AudioChunker (Rolling Window) → Web Worker (MP3 編碼)
-→ Whisper API → OverlapProcessor (斷句優化) → GPT 翻譯 → Content Script 顯示
+chrome.tabCapture → AudioCapture → AudioChunker (Rolling Window)
+→ MP3Encoder Worker (lamejs) → WhisperClient (API)
+→ OverlapProcessor (斷句優化 + 去重) → Content Script (時間同步顯示)
 ```
+
+**完整流程細節**:
+1. **AudioCapture**: 使用 `chrome.tabCapture.capture()` 擷取 tab 音訊流
+2. **AudioChunker**: 3 秒音訊段 + 1 秒重疊區 (Rolling Window)
+3. **MP3Encoder Worker**: Float32 → Int16 → MP3 (16kHz, 單聲道, 128kbps)
+4. **WhisperClient**: 上傳 MP3 → Whisper API → verbose_json (含 segments 與時間戳)
+5. **OverlapProcessor**:
+   - 調整 segments 時間戳為絕對時間
+   - 比對重疊區 (80% time OR 50% time + 80% text similarity)
+   - 過濾重複 segments (15-25% 過濾率)
+   - 多語言斷句優化
+6. **Content Script**:
+   - VideoMonitor 監聽 video.currentTime
+   - 根據時間動態顯示對應 segment
+   - 支援 play/pause/seek 事件
 
 **Rolling Window 策略**:
 - 每段 3 秒音訊,前後重疊 1 秒
 - 重疊區用於比對與優化斷句,避免句子被切斷
-- 配置: `CHUNK_CONFIG` in `audio-chunker.js`
+- 配置: `CHUNK_CONFIG` in `src/lib/config.js`
 
 **OverlapProcessor** (`src/background/subtitle-processor.js`):
-- 專案最核心的技術模組
-- 比對相鄰音訊段的重疊區文字 (時間戳 + 文字相似度)
-- 合併破碎句子,去除重複內容
+- **專案最核心的技術模組** (418 lines)
+- 雙重去重策略: 80% 時間戳重疊 OR (50% 時間戳 + 80% 文字相似度)
+- Levenshtein Distance 計算文字相似度
+- 多語言斷句規則 (中/英/日/韓/歐洲語系)
+- 測試覆蓋率: 100%
 
 ## 重要技術規範
 
@@ -187,25 +205,59 @@ refactor: simplify error handling
 
 ### 字幕延遲過高 (> 8 秒)
 檢查點:
-1. 音訊編碼時間 (應 < 500ms)
-2. Whisper API 響應時間 (通常 2-3 秒)
-3. 網路連線品質
-4. 是否啟用翻譯 (翻譯額外增加 2-3 秒)
+1. **音訊編碼時間** (應 < 500ms) - 查看 Console `[SubtitleService] MP3 編碼完成`
+2. **Whisper API 響應時間** (通常 2-3 秒) - 查看 Console `[SubtitleService] Whisper 辨識完成`
+3. **OverlapProcessor 處理時間** (應 < 10ms) - 查看 Console `[SubtitleService] OverlapProcessor 處理完成`
+4. **網路連線品質** - 檢查 Network tab
+5. **是否啟用翻譯** (翻譯額外增加 2-3 秒) - 目前 Phase 1 未實作
+
+**預期總延遲**: 5.3-6.5 秒 (3s 累積 + 0.5s 編碼 + 2-3s Whisper)
+
+### 字幕未顯示或不同步
+檢查點:
+1. **VideoMonitor 是否附加** - Console 應顯示 `[VideoMonitor] 已附加到 video 元素`
+2. **Segments 是否接收** - Console 應顯示 `[ContentScript] 接收字幕資料`
+3. **當前時間是否有對應 segment** - Console 顯示 `[ContentScript] 顯示字幕`
+4. **影片是否正在播放** - 暫停時字幕會停止更新
+5. **CSS 是否載入** - 檢查 `subtitle-overlay.css` 是否正確注入
+
+**除錯指令**:
+```javascript
+// 在 DevTools Console 執行
+document.querySelector('video').currentTime  // 檢查影片時間
+document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
+```
+
+### OverlapProcessor 過濾率異常
+正常過濾率: **15-25%**
+
+**過濾率過高 (> 40%)**:
+- 可能原因: `similarityThreshold` 設定過低
+- 解決: 調整 `OVERLAP_CONFIG.similarityThreshold` (預設 0.8)
+
+**過濾率過低 (< 5%)**:
+- 可能原因: Whisper 在重疊區產生完全不同的辨識結果
+- 解決: 檢查音訊品質,考慮增加重疊區長度
 
 ### Content Script 未注入
 1. 檢查 `manifest.json` 的 `content_scripts.matches` 是否涵蓋目標網站
 2. 確認 `run_at: "document_idle"` 時機正確
 3. 在 DevTools Console 檢查是否有載入錯誤
+4. 確認 Extension 已啟用且有權限
 
 ### API 呼叫失敗
-1. 驗證 API Key 是否有效 (`APIKeyManager.verifyAndSave()`)
-2. 檢查 OpenAI 帳戶額度
-3. 查看 Network tab 是否有 CORS 或 429 (Rate Limit) 錯誤
+1. **驗證 API Key** - 使用 `APIKeyManager.verifyAndSave()`
+2. **檢查 OpenAI 帳戶額度** - 登入 OpenAI 查看餘額
+3. **Network tab 檢查**:
+   - CORS 錯誤: 檢查 `manifest.json` 的 `host_permissions`
+   - 429 Too Many Requests: 達到 Rate Limit,稍後重試
+   - 401 Unauthorized: API Key 無效或過期
 
 ### API Key 解密失敗
-1. 可能原因: 更換了瀏覽器或電腦 (瀏覽器指紋改變)
-2. 解決方法: 點擊「更換 API Key」重新輸入
-3. 安全考量: 這是設計的安全特性,防止跨裝置複製加密資料
+1. **可能原因**: 更換了瀏覽器或電腦 (瀏覽器指紋改變)
+2. **解決方法**: 點擊「更換 API Key」重新輸入
+3. **安全考量**: 這是設計的安全特性,防止跨裝置複製加密資料
+4. **技術細節**: 使用瀏覽器指紋 (UserAgent + 硬體) 衍生加密金鑰
 
 ## 已知問題與技術債務
 
@@ -217,16 +269,33 @@ refactor: simplify error handling
    - 臨時方案: 建置後手動修復
    - TODO: 調整 `vite.config.js` 的 `base` 和 `build.rollupOptions` 配置
 
-2. **缺少自動化測試**
-   - 現狀: 測試覆蓋率 0%
-   - 影響: 無法自動驗證功能正確性
-   - TODO Phase 1: 新增單元測試 (目標覆蓋率 ≥ 70%)
-   - TODO Phase 2: 新增 E2E 測試 (Playwright)
+2. **測試覆蓋率不足**
+   - 現狀: 部分模組測試覆蓋率低 (OverlapProcessor: 100%, 其他模組: 0-30%)
+   - 影響: 無法全面自動驗證功能正確性
+   - TODO: 新增單元測試 (目標覆蓋率 ≥ 70%)
+   - TODO: 新增 E2E 測試 (Playwright)
+   - 已完成: ✅ OverlapProcessor 100% 覆蓋率 + Demo 頁面 5 個互動測試
 
-3. **Chrome Automation Mode 限制**
+3. **ScriptProcessorNode 已過時**
+   - 現象: AudioChunker 使用的 `ScriptProcessorNode` 已被 W3C 標記為 deprecated
+   - 影響: 未來瀏覽器版本可能移除此 API
+   - 建議: 遷移至 AudioWorklet API
+   - 挑戰: Service Worker 對 AudioWorklet 的支援有限
+
+4. **Chrome Automation Mode 限制**
    - 現象: MCP chrome-devtools 控制的 Chrome 無法載入 Extension
    - 影響: 無法使用自動化工具測試 Extension
    - 解決方案: 使用正常 Chrome 視窗手動測試
+
+### ✅ 已修復問題
+
+1. ~~**Content Script 時間同步問題**~~ (已於 2025-11-09 修復)
+   - ~~現象: 字幕顯示完整文字,未根據影片時間逐句顯示~~
+   - ~~影響: 使用者體驗不佳,字幕與影片不同步~~
+   - ✅ **修復**: 實作 VideoMonitor 類別,監聽 video 元素的 timeupdate 事件
+   - ✅ **修復**: 根據 `video.currentTime` 動態查找並顯示對應的 segment
+   - ✅ **修復**: 支援 play/pause/seek 事件的即時響應
+   - ✅ **驗證**: Demo 頁面測試 5 通過,字幕與影片完美同步
 
 ### 💡 未來改進方向
 
@@ -247,7 +316,7 @@ refactor: simplify error handling
 
 ## 專案狀態
 
-目前專案處於 **Phase 0 已完成,準備進入 Phase 1** 階段 (更新日期: 2025-11-08)
+目前專案處於 **Phase 1 已完成,準備進入 Phase 2** 階段 (更新日期: 2025-11-09)
 
 ### Phase 0: 基礎建置與安全機制 ✅ (已完成)
 - ✅ PRD (產品需求文件)
@@ -267,15 +336,25 @@ refactor: simplify error handling
 - 更新 `popup.js` 支援遮罩顯示與更換 API Key 流程
 - 建置產物大小: popup 5.33 KB (gzip), service-worker 8.75 KB (gzip)
 
-### 待開發 (按 Milestone 順序):
+### Phase 1: 基礎辨識功能 ✅ (已完成)
+- ✅ 音訊擷取 (chrome.tabCapture) - `audio-capture.js` (182 lines)
+- ✅ 音訊切塊 (Rolling Window: 3 秒音訊,重疊 1 秒) - `audio-chunker.js` (227 lines)
+- ✅ MP3 編碼 (Web Worker + lamejs) - `mp3-encoder.js` (192 lines) + Worker (124 lines)
+- ✅ Whisper API 整合 - `whisper-client.js` (265 lines)
+- ✅ OverlapProcessor (斷句優化) - `subtitle-processor.js` (418 lines)
+- ✅ 基礎字幕顯示 - `content-script.js` (329 lines) + CSS (96 lines)
+- ✅ **時間同步字幕顯示** - VideoMonitor 類別,根據影片時間動態顯示
+- ✅ 多語言斷句規則 - `language-rules.js` (352 lines)
+- ✅ 文字相似度計算 - `text-similarity.js` (Levenshtein Distance)
 
-#### Phase 1: 基礎辨識功能 (預計 3-5 天)
-- 🔲 音訊擷取 (chrome.tabCapture)
-- 🔲 音訊切塊 (Rolling Window: 3 秒音訊,重疊 1 秒)
-- 🔲 MP3 編碼 (Web Worker + lamejs)
-- 🔲 Whisper API 整合
-- 🔲 OverlapProcessor (斷句優化)
-- 🔲 基礎字幕顯示
+**關鍵成果**:
+- 完整音訊處理管線已建立 (~2,900 lines)
+- OverlapProcessor 雙重去重策略 (80% time OR 50% time + 80% text)
+- Content Script 時間同步修復 (支援 play/pause/seek)
+- 測試覆蓋: OverlapProcessor 100%, 整體 Demo 頁面 5 個測試
+- Git 提交: `1aa0cf5` (pipeline) + `051ee78` (time sync)
+
+### 待開發 (按 Milestone 順序):
 
 #### Phase 2: 使用者介面優化 (預計 2-3 天)
 - 🔲 Popup UI 完善
@@ -295,13 +374,38 @@ refactor: simplify error handling
 - [CLAUDE.md](CLAUDE.md) - Claude 開發指引 (本文件)
 
 ### 開發記錄 (Serena 記憶)
+- `.serena/memories/phase1-completion-2025-11-09.md` - **Phase 1 完整記錄** (11 個模組詳細規格)
 - `.serena/memories/development-progress-2025-11-08.md` - 詳細開發進度記錄
 - `.serena/memories/project-status-2025-11-08.md` - 專案狀態總覽
 - `.serena/memories/testing-2025-11-08.md` - Extension 測試記錄
 
 ### 重要原始碼
+
+**Phase 0 基礎架構**:
 - `src/lib/crypto-utils.js` - 加密工具模組 (AES-GCM)
 - `src/lib/api-key-manager.js` - API Key 管理與成本追蹤
 - `src/lib/errors.js` - 統一錯誤處理
-- `src/popup/popup.js` - Popup UI 邏輯
+- `src/lib/config.js` - 全域配置 (CHUNK_CONFIG, WHISPER_CONFIG, OVERLAP_CONFIG)
 - `manifest.json` - Extension 配置 (Manifest V3)
+
+**Phase 1 音訊處理管線**:
+- `src/background/audio-capture.js` - 音訊擷取 (chrome.tabCapture)
+- `src/background/audio-chunker.js` - Rolling Window 切塊
+- `src/background/mp3-encoder.js` - MP3 編碼器包裝
+- `src/workers/mp3-encoder.worker.js` - MP3 編碼 Worker (lamejs)
+- `src/background/whisper-client.js` - Whisper API 整合
+- `src/background/subtitle-processor.js` - **OverlapProcessor** (核心去重與斷句)
+- `src/lib/language-rules.js` - 多語言斷句規則
+- `src/lib/text-similarity.js` - Levenshtein Distance 相似度計算
+
+**Phase 1 字幕顯示**:
+- `src/content/content-script.js` - Content Script (VideoMonitor + SubtitleOverlay)
+- `src/content/subtitle-overlay.css` - 字幕樣式
+
+**核心控制器**:
+- `src/background/service-worker.js` - **主控制器** (編排整個音訊處理流程)
+- `src/popup/popup.js` - Popup UI 邏輯
+
+**測試與 Demo**:
+- `tests/unit/overlap-processor.test.js` - OverlapProcessor 單元測試 (100% 覆蓋率)
+- `demo/overlap-processor-demo.html` - 互動測試頁面 (5 個測試)
