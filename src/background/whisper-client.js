@@ -5,8 +5,9 @@
  * 回傳包含時間戳的逐字稿
  */
 import { BabelBridgeError, ErrorCodes } from '../lib/errors.js';
-import { WHISPER_CONFIG, STORAGE_KEYS } from '../lib/config.js';
+import { WHISPER_CONFIG } from '../lib/config.js';
 import { ErrorHandler } from '../lib/error-handler.js';
+import { APIKeyManager } from '../lib/api-key-manager.js';
 
 export class WhisperClient {
   constructor() {
@@ -17,13 +18,25 @@ export class WhisperClient {
    * 初始化 (載入 API Key)
    */
   async init() {
-    const result = await chrome.storage.local.get(STORAGE_KEYS.API_KEY);
-    this.apiKey = result[STORAGE_KEYS.API_KEY];
+    try {
+      // 使用 APIKeyManager 取得解密後的 API Key
+      this.apiKey = await APIKeyManager.getKey();
+    } catch (error) {
+      // 處理解密失敗的情況
+      if (error.code === ErrorCodes.CRYPTO_DECRYPTION_FAILED) {
+        throw new BabelBridgeError(
+          ErrorCodes.API_KEY_INVALID,
+          'API Key 解密失敗，請重新輸入 API Key（可能是更換了瀏覽器或電腦）',
+          { originalError: error }
+        );
+      }
+      throw error;
+    }
 
     if (!this.apiKey) {
       throw new BabelBridgeError(
         ErrorCodes.API_KEY_MISSING,
-        'OpenAI API Key not configured'
+        'OpenAI API Key not configured. Please set it in the extension popup.'
       );
     }
 
