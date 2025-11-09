@@ -259,6 +259,26 @@
         <div id="output4" class="output"></div>
       </div>
 
+      <!-- 測試區塊 5: 字幕時間同步 -->
+      <div class="test-section">
+        <h2>⏱️ 測試 5: 字幕時間同步</h2>
+        <p>測試 Content Script 的 Video 監聽與字幕同步顯示</p>
+        <div class="controls">
+          <button onclick="initSyncTest()">初始化測試</button>
+          <button onclick="loadTestSubtitles()" class="secondary">載入測試字幕</button>
+          <button onclick="clearTestSubtitles()" class="clear">清除字幕</button>
+        </div>
+        <div style="margin-top: 15px; background: #f0f0f0; padding: 15px; border-radius: 8px;">
+          <video id="testVideo" controls style="width: 100%; border-radius: 6px; background: #000;">
+            <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
+          </video>
+          <div id="babel-subtitle-overlay" style="position: relative; margin-top: -60px; text-align: center; display: none; pointer-events: none;">
+            <div id="babel-subtitle" style="display: inline-block; background: rgba(0,0,0,0.85); color: white; padding: 10px 20px; border-radius: 6px; font-size: 18px; text-shadow: 2px 2px 4px rgba(0,0,0,0.8);"></div>
+          </div>
+        </div>
+        <div id="output5" class="output"></div>
+      </div>
+
       <!-- 全部測試 -->
       <div class="test-section">
         <h2>🚀 完整測試套件</h2>
@@ -656,6 +676,171 @@
       }
     }
 
+    // 測試 5: 字幕時間同步
+    let syncTestOverlay = null
+
+    window.initSyncTest = function() {
+      const output = document.getElementById('output5')
+      output.innerHTML = ''
+
+      const log = (msg, color = '#d4d4d4') => {
+        output.innerHTML += `<span style="color: ${color};">${msg}</span>\n`
+      }
+
+      try {
+        log('🔧 開始初始化字幕時間同步測試\n', '#4caf50')
+
+        // 簡化版的 VideoMonitor 與 SubtitleOverlay
+        class VideoMonitor {
+          constructor(videoEl, onTimeUpdate) {
+            this.videoElement = videoEl
+            this.onTimeUpdate = onTimeUpdate
+            this.attach()
+          }
+
+          attach() {
+            this.videoElement.addEventListener('timeupdate', () => {
+              if (this.onTimeUpdate) {
+                this.onTimeUpdate(this.videoElement.currentTime)
+              }
+            })
+            log('✅ 已附加到 video 元素', '#4caf50')
+          }
+
+          getCurrentTime() {
+            return this.videoElement.currentTime
+          }
+        }
+
+        class SubtitleOverlay {
+          constructor(videoEl, containerEl, subtitleEl) {
+            this.container = containerEl
+            this.subtitleEl = subtitleEl
+            this.segments = []
+            this.currentSegmentIndex = -1
+            this.videoMonitor = new VideoMonitor(videoEl, this.handleTimeUpdate.bind(this))
+          }
+
+          addSubtitleData(data) {
+            if (!data.segments || data.segments.length === 0) return
+
+            log(`📥 接收 ${data.segments.length} 個 segments`, '#4caf50')
+            this.segments.push(...data.segments)
+            this.segments.sort((a, b) => a.start - b.start)
+            log(`📊 目前總共有 ${this.segments.length} 個 segments`, '#4caf50')
+
+            this.updateDisplay(this.videoMonitor.getCurrentTime())
+          }
+
+          handleTimeUpdate(currentTime) {
+            this.updateDisplay(currentTime)
+          }
+
+          updateDisplay(currentTime) {
+            const segmentIndex = this.findSegmentIndex(currentTime)
+
+            if (segmentIndex === -1) {
+              this.hide()
+              return
+            }
+
+            if (segmentIndex === this.currentSegmentIndex) {
+              return
+            }
+
+            this.currentSegmentIndex = segmentIndex
+            this.show(this.segments[segmentIndex])
+          }
+
+          findSegmentIndex(currentTime) {
+            for (let i = 0; i < this.segments.length; i++) {
+              const segment = this.segments[i]
+              if (currentTime >= segment.start && currentTime <= segment.end) {
+                return i
+              }
+            }
+            return -1
+          }
+
+          show(segment) {
+            this.subtitleEl.textContent = segment.text
+            this.container.style.display = 'block'
+            log(`💬 顯示: "${segment.text}" (${segment.start.toFixed(2)}s - ${segment.end.toFixed(2)}s)`, '#4caf50')
+          }
+
+          hide() {
+            if (this.container.style.display !== 'none') {
+              this.container.style.display = 'none'
+              this.currentSegmentIndex = -1
+            }
+          }
+
+          clear() {
+            this.container.style.display = 'none'
+            this.subtitleEl.textContent = ''
+            this.segments = []
+            this.currentSegmentIndex = -1
+            log('🗑️ 已清除所有字幕', '#ff9800')
+          }
+        }
+
+        const videoEl = document.getElementById('testVideo')
+        const containerEl = document.getElementById('babel-subtitle-overlay')
+        const subtitleEl = document.getElementById('babel-subtitle')
+
+        syncTestOverlay = new SubtitleOverlay(videoEl, containerEl, subtitleEl)
+
+        log('\n✅ 字幕時間同步測試初始化完成！', '#4caf50')
+        log('📌 請點擊「載入測試字幕」按鈕測試', '#ff9800')
+
+      } catch (error) {
+        log(`❌ 錯誤: ${error.message}`, '#f44336')
+        log(error.stack, '#f44336')
+      }
+    }
+
+    window.loadTestSubtitles = function() {
+      if (!syncTestOverlay) {
+        alert('請先點擊「初始化測試」按鈕')
+        return
+      }
+
+      const output = document.getElementById('output5')
+      const log = (msg, color = '#d4d4d4') => {
+        output.innerHTML += `<span style="color: ${color};">${msg}</span>\n`
+      }
+
+      const testData = {
+        chunkIndex: 0,
+        startTime: 0,
+        endTime: 20,
+        segments: [
+          { id: 0, start: 0.0, end: 2.5, text: 'Hello, this is the first subtitle.' },
+          { id: 1, start: 2.5, end: 5.0, text: 'Now we are showing the second one.' },
+          { id: 2, start: 5.0, end: 7.5, text: 'And here comes the third subtitle.' },
+          { id: 3, start: 7.5, end: 10.0, text: 'Almost done with the fourth.' },
+          { id: 4, start: 10.0, end: 12.5, text: 'This is the final subtitle segment.' },
+          { id: 5, start: 12.5, end: 15.0, text: 'Wait, one more for good measure!' },
+          { id: 6, start: 15.0, end: 17.5, text: 'Okay, now we are really done.' },
+          { id: 7, start: 17.5, end: 20.0, text: 'The very last subtitle. Goodbye!' }
+        ],
+        language: 'en'
+      }
+
+      log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '#666')
+      syncTestOverlay.addSubtitleData(testData)
+      log('✅ 測試字幕已載入，請播放影片觀察字幕同步\n', '#4caf50')
+    }
+
+    window.clearTestSubtitles = function() {
+      if (!syncTestOverlay) {
+        alert('請先點擊「初始化測試」按鈕')
+        return
+      }
+
+      syncTestOverlay.clear()
+    }
+
     // 執行全部測試
     window.runAllTests = function() {
       testResults = { passed: 0, failed: 0, total: 0 }
@@ -695,12 +880,13 @@
       document.getElementById('output2').innerHTML = ''
       document.getElementById('output3').innerHTML = ''
       document.getElementById('output4').innerHTML = ''
+      document.getElementById('output5').innerHTML = ''
       document.getElementById('stats').style.display = 'none'
       testResults = { passed: 0, failed: 0, total: 0 }
     }
 
     console.log('✅ OverlapProcessor Demo 載入完成')
-    console.log('可用的全域函數: runTest1, runTest2, runTest3, runTest4, runAllTests')
+    console.log('可用的全域函數: runTest1, runTest2, runTest3, runTest4, initSyncTest, runAllTests')
   </script>
 </body>
 </html>

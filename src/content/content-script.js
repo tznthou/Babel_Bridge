@@ -4,14 +4,141 @@
  * 職責:
  * 1. 接收來自 Background 的字幕資料
  * 2. 渲染字幕 Overlay
- * 3. 監聽影片事件 (play/pause/seek)
+ * 3. 監聽影片事件 (play/pause/seek) 並同步顯示字幕
  */
 import { MessageTypes } from '../lib/config.js';
 
+/**
+ * Video 元素監聽器
+ * 負責偵測並監聽頁面中的 video 元素
+ */
+class VideoMonitor {
+  constructor(onTimeUpdate) {
+    this.videoElement = null;
+    this.onTimeUpdate = onTimeUpdate;
+    this.isMonitoring = false;
+    this.findAndAttach();
+  }
+
+  /**
+   * 尋找並附加到 video 元素
+   */
+  findAndAttach() {
+    // 嘗試找到 video 元素
+    const video = document.querySelector('video');
+
+    if (video) {
+      this.attach(video);
+    } else {
+      // 如果找不到，使用 MutationObserver 監聽 DOM 變化
+      const observer = new MutationObserver(() => {
+        const video = document.querySelector('video');
+        if (video) {
+          this.attach(video);
+          observer.disconnect();
+        }
+      });
+
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true
+      });
+
+      console.log('[VideoMonitor] 等待 video 元素出現...');
+    }
+  }
+
+  /**
+   * 附加到 video 元素
+   */
+  attach(video) {
+    if (this.videoElement === video) {
+      return; // 已經附加
+    }
+
+    // 移除舊的監聽器
+    this.detach();
+
+    this.videoElement = video;
+
+    // 監聽時間更新事件
+    video.addEventListener('timeupdate', this.handleTimeUpdate.bind(this));
+    video.addEventListener('play', this.handlePlay.bind(this));
+    video.addEventListener('pause', this.handlePause.bind(this));
+    video.addEventListener('seeked', this.handleSeeked.bind(this));
+
+    this.isMonitoring = true;
+
+    console.log('[VideoMonitor] 已附加到 video 元素');
+  }
+
+  /**
+   * 移除監聽器
+   */
+  detach() {
+    if (!this.videoElement) {
+      return;
+    }
+
+    this.videoElement.removeEventListener('timeupdate', this.handleTimeUpdate.bind(this));
+    this.videoElement.removeEventListener('play', this.handlePlay.bind(this));
+    this.videoElement.removeEventListener('pause', this.handlePause.bind(this));
+    this.videoElement.removeEventListener('seeked', this.handleSeeked.bind(this));
+
+    this.videoElement = null;
+    this.isMonitoring = false;
+  }
+
+  /**
+   * 取得當前播放時間
+   */
+  getCurrentTime() {
+    return this.videoElement ? this.videoElement.currentTime : 0;
+  }
+
+  /**
+   * 處理時間更新事件
+   */
+  handleTimeUpdate() {
+    if (this.onTimeUpdate) {
+      this.onTimeUpdate(this.getCurrentTime());
+    }
+  }
+
+  /**
+   * 處理播放事件
+   */
+  handlePlay() {
+    console.log('[VideoMonitor] 影片開始播放');
+  }
+
+  /**
+   * 處理暫停事件
+   */
+  handlePause() {
+    console.log('[VideoMonitor] 影片暫停');
+  }
+
+  /**
+   * 處理跳轉事件
+   */
+  handleSeeked() {
+    console.log('[VideoMonitor] 影片跳轉到', this.getCurrentTime().toFixed(2));
+    if (this.onTimeUpdate) {
+      this.onTimeUpdate(this.getCurrentTime());
+    }
+  }
+}
+
+/**
+ * 字幕 Overlay 管理器
+ */
 class SubtitleOverlay {
   constructor() {
     this.container = null;
-    this.currentSubtitle = null;
+    this.segments = []; // 儲存所有接收到的 segments
+    this.currentSegmentIndex = -1; // 當前顯示的 segment 索引
+    this.videoMonitor = null;
     this.init();
   }
 
@@ -27,37 +154,112 @@ class SubtitleOverlay {
     // 注入到頁面
     document.body.appendChild(this.container);
 
+    // 初始化 Video 監聽器
+    this.videoMonitor = new VideoMonitor(this.handleTimeUpdate.bind(this));
+
     console.log('[ContentScript] Subtitle overlay 已初始化');
+  }
+
+  /**
+   * 接收新的字幕資料
+   */
+  addSubtitleData(data) {
+    if (!data.segments || data.segments.length === 0) {
+      console.log('[ContentScript] 收到空的字幕資料');
+      return;
+    }
+
+    console.log('[ContentScript] 接收字幕資料:', {
+      chunkIndex: data.chunkIndex,
+      segments: data.segments.length,
+      startTime: data.startTime,
+      endTime: data.endTime
+    });
+
+    // 將新的 segments 加入儲存
+    this.segments.push(...data.segments);
+
+    // 依照時間排序
+    this.segments.sort((a, b) => a.start - b.start);
+
+    console.log('[ContentScript] 目前總共有', this.segments.length, '個 segments');
+
+    // 立即更新顯示
+    const currentTime = this.videoMonitor.getCurrentTime();
+    this.updateDisplay(currentTime);
+  }
+
+  /**
+   * 處理時間更新
+   */
+  handleTimeUpdate(currentTime) {
+    this.updateDisplay(currentTime);
+  }
+
+  /**
+   * 根據當前時間更新顯示
+   */
+  updateDisplay(currentTime) {
+    // 找出當前時間應該顯示的 segment
+    const segmentIndex = this.findSegmentIndex(currentTime);
+
+    if (segmentIndex === -1) {
+      // 沒有符合的 segment，隱藏字幕
+      this.hide();
+      return;
+    }
+
+    // 如果是相同的 segment，不需要重新渲染
+    if (segmentIndex === this.currentSegmentIndex) {
+      return;
+    }
+
+    // 顯示新的 segment
+    this.currentSegmentIndex = segmentIndex;
+    this.show(this.segments[segmentIndex]);
+  }
+
+  /**
+   * 找出當前時間對應的 segment 索引
+   */
+  findSegmentIndex(currentTime) {
+    for (let i = 0; i < this.segments.length; i++) {
+      const segment = this.segments[i];
+      if (currentTime >= segment.start && currentTime <= segment.end) {
+        return i;
+      }
+    }
+    return -1;
   }
 
   /**
    * 顯示字幕
    */
-  show(subtitle) {
-    this.currentSubtitle = subtitle;
-
+  show(segment) {
     // 清空容器
     this.container.innerHTML = '';
 
     // 建立字幕元素
     const subtitleEl = document.createElement('div');
     subtitleEl.className = 'babel-subtitle';
-    subtitleEl.textContent = subtitle.text;
+    subtitleEl.textContent = segment.text;
 
     this.container.appendChild(subtitleEl);
 
     // 顯示容器
     this.container.style.display = 'flex';
 
-    console.log('[ContentScript] 顯示字幕:', subtitle.text);
+    console.log('[ContentScript] 顯示字幕:', segment.text, `(${segment.start.toFixed(2)}s - ${segment.end.toFixed(2)}s)`);
   }
 
   /**
    * 隱藏字幕
    */
   hide() {
-    this.container.style.display = 'none';
-    this.currentSubtitle = null;
+    if (this.container.style.display !== 'none') {
+      this.container.style.display = 'none';
+      this.currentSegmentIndex = -1;
+    }
   }
 
   /**
@@ -65,18 +267,27 @@ class SubtitleOverlay {
    */
   clear() {
     this.container.innerHTML = '';
-    this.currentSubtitle = null;
+    this.segments = [];
+    this.currentSegmentIndex = -1;
+    console.log('[ContentScript] 已清除所有字幕');
   }
 
   /**
    * 移除 Overlay
    */
   destroy() {
+    if (this.videoMonitor) {
+      this.videoMonitor.detach();
+      this.videoMonitor = null;
+    }
+
     if (this.container && this.container.parentNode) {
       this.container.parentNode.removeChild(this.container);
     }
+
     this.container = null;
-    this.currentSubtitle = null;
+    this.segments = [];
+    this.currentSegmentIndex = -1;
   }
 }
 
@@ -93,7 +304,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   switch (type) {
     case MessageTypes.SUBTITLE_UPDATE:
-      overlay.show(data);
+      // 新版：使用 addSubtitleData 儲存 segments 並根據時間顯示
+      overlay.addSubtitleData(data);
       sendResponse({ success: true });
       break;
 
