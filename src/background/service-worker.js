@@ -1,14 +1,16 @@
 /**
- * Background Service Worker - Babel Bridge 核心控制器
+ * Background Service Worker - Babel Bridge 核心控制器 (Manifest V3)
  *
- * 職責:
- * 1. 編排音訊處理流程 (Capture → Chunk → Encode → Whisper)
- * 2. 管理 API 呼叫
- * 3. 處理來自 Popup 和 Content Script 的訊息
+ * 新架構（2025-11-09）：
+ * - 音訊擷取和編碼已移至 Offscreen Document
+ * - Service Worker 僅負責：協調流程、Whisper API 呼叫、字幕處理
+ *
+ * 流程：
+ * 1. Service Worker → AudioCapture → Offscreen Document
+ * 2. Offscreen Document → 音訊處理 → MP3 編碼 → AUDIO_CHUNK_READY 訊息
+ * 3. Service Worker → Whisper API → OverlapProcessor → Content Script
  */
 import { AudioCapture } from './audio-capture.js';
-import { AudioChunker } from './audio-chunker.js';
-import { MP3Encoder } from './mp3-encoder.js';
 import { WhisperClient } from './whisper-client.js';
 import { OverlapProcessor } from './subtitle-processor.js';
 import { APIKeyManager } from '../lib/api-key-manager.js';
@@ -22,8 +24,6 @@ import { MessageTypes, OVERLAP_CONFIG } from '../lib/config.js';
 class SubtitleService {
   constructor() {
     this.audioCapture = null;
-    this.audioChunker = null;
-    this.mp3Encoder = null;
     this.whisperClient = null;
     this.overlapProcessor = null;
 
@@ -37,10 +37,6 @@ class SubtitleService {
    * 初始化服務
    */
   async init() {
-    // 初始化 MP3 編碼器
-    this.mp3Encoder = new MP3Encoder();
-    await this.mp3Encoder.init();
-
     // 初始化 Whisper Client
     this.whisperClient = new WhisperClient();
     await this.whisperClient.init();
@@ -62,25 +58,15 @@ class SubtitleService {
 
     try {
       // 確保初始化
-      if (!this.mp3Encoder || !this.whisperClient) {
+      if (!this.whisperClient) {
         await this.init();
       }
 
       this.currentTabId = tabId;
 
-      // 1. 啟動音訊擷取
+      // 啟動音訊擷取 (Offscreen Document 會自動處理切塊和編碼)
       this.audioCapture = new AudioCapture();
       await this.audioCapture.start(tabId);
-
-      // 2. 建立音訊處理器
-      const audioContext = this.audioCapture.getAudioContext();
-      this.audioChunker = new AudioChunker(audioContext);
-
-      // 3. 開始處理音訊 (當 chunk 準備好時觸發處理)
-      const sourceNode = this.audioCapture.getSourceNode();
-      this.audioChunker.start(sourceNode, (chunk) => {
-        this.processChunk(chunk);
-      });
 
       this.isActive = true;
 
@@ -109,35 +95,31 @@ class SubtitleService {
   }
 
   /**
-   * 處理音訊 chunk
+   * 處理音訊 chunk (來自 Offscreen Document 的已編碼 MP3)
    * @private
    */
-  async processChunk(chunk) {
+  async processChunk(chunkData) {
     try {
-      console.log(`[SubtitleService] 處理 Chunk ${chunk.index}`, {
-        startTime: chunk.startTime.toFixed(2),
-        endTime: chunk.endTime.toFixed(2),
+      const { chunkIndex, startTime, endTime, blob, size } = chunkData;
+
+      console.log(`[SubtitleService] 處理 Chunk ${chunkIndex}`, {
+        startTime: startTime.toFixed(2),
+        endTime: endTime.toFixed(2),
+        size: `${(size / 1024).toFixed(2)} KB`,
       });
 
-      // 1. 編碼為 MP3
-      const mp3Blob = await this.mp3Encoder.encode(chunk.samples);
-
-      console.log(`[SubtitleService] MP3 編碼完成`, {
-        size: mp3Blob.size,
-      });
-
-      // 2. 送至 Whisper 辨識
-      const transcription = await this.whisperClient.transcribe(mp3Blob);
+      // 1. 送至 Whisper 辨識 (blob 已經是 MP3 格式)
+      const transcription = await this.whisperClient.transcribe(blob);
 
       console.log(`[SubtitleService] Whisper 辨識完成`, {
         text: transcription.text,
         segments: transcription.segments.length,
       });
 
-      // 3. OverlapProcessor 處理 (去重與斷句優化)
+      // 2. OverlapProcessor 處理 (去重與斷句優化)
       const processedSegments = this.overlapProcessor.process(
         transcription,
-        chunk.startTime
+        startTime
       );
 
       console.log(`[SubtitleService] OverlapProcessor 處理完成`, {
@@ -146,15 +128,15 @@ class SubtitleService {
         filtered: transcription.segments.length - processedSegments.length,
       });
 
-      // 4. 記錄成本
-      await APIKeyManager.trackWhisperUsage(chunk.endTime - chunk.startTime);
+      // 3. 記錄成本
+      await APIKeyManager.trackWhisperUsage(endTime - startTime);
 
-      // 5. 發送字幕到 Content Script (只發送新的 segments)
+      // 4. 發送字幕到 Content Script (只發送新的 segments)
       if (processedSegments.length > 0) {
         await this.sendSubtitleToContent({
-          chunkIndex: chunk.index,
-          startTime: chunk.startTime,
-          endTime: chunk.endTime,
+          chunkIndex,
+          startTime,
+          endTime,
           text: transcription.text,
           segments: processedSegments,
           language: transcription.language,
@@ -165,7 +147,7 @@ class SubtitleService {
     } catch (error) {
       await ErrorHandler.handle(error, {
         operation: 'process_chunk',
-        chunkIndex: chunk.index,
+        chunkIndex: chunkData.chunkIndex,
       });
     }
   }
@@ -195,11 +177,6 @@ class SubtitleService {
    * @private
    */
   cleanup() {
-    if (this.audioChunker) {
-      this.audioChunker.stop();
-      this.audioChunker = null;
-    }
-
     if (this.audioCapture) {
       this.audioCapture.stop();
       this.audioCapture = null;
@@ -219,7 +196,6 @@ class SubtitleService {
     return {
       active: this.isActive,
       tabId: this.currentTabId,
-      stats: this.audioChunker ? this.audioChunker.getStats() : null,
     };
   }
 }
@@ -228,7 +204,7 @@ class SubtitleService {
 const service = new SubtitleService();
 
 /**
- * 處理來自 Popup 和 Content Script 的訊息
+ * 處理來自 Popup、Content Script 和 Offscreen Document 的訊息
  */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { type, data } = message;
@@ -260,6 +236,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case MessageTypes.GET_COST_STATS: {
           const stats = await APIKeyManager.getCurrentMonthStats();
           sendResponse({ success: true, data: stats });
+          break;
+        }
+
+        case 'AUDIO_CHUNK_READY': {
+          // 來自 Offscreen Document 的音訊 chunk (已編碼為 MP3)
+          await service.processChunk(data);
+          // 不需要 sendResponse (Offscreen 不等待回應)
           break;
         }
 
