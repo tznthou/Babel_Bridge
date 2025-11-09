@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite build --watch --mode development",
-    "build": "vite build --mode production && cp -r icons dist/",
+    "build": "vite build --mode production && cp -r icons dist/ && node scripts/fix-paths.js",
     "package": "npm run build && node scripts/package.js",
     "test": "vitest run",
     "test:unit": "vitest run --dir tests/unit",

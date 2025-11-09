@@ -12,6 +12,8 @@ export default defineConfig({
       ],
     }),
   ],
+  // ✅ 關鍵修復：使用相對路徑而非絕對路徑
+  base: './',
   build: {
     outDir: 'dist',
     emptyOutDir: true,
