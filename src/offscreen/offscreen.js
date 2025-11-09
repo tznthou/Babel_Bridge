@@ -220,7 +220,13 @@ async function handleStartAudioCapture(captureData, sendResponse) {
       sampleRate: AUDIO_CONFIG.SAMPLE_RATE,
     });
 
-    console.log(`[Offscreen] AudioContext 已建立，sample rate: ${audioContext.sampleRate}`);
+    // 確保 AudioContext 處於 running 狀態（避免被 autoplay policy 暫停）
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
+      console.log('[Offscreen] AudioContext 已從暫停狀態恢復');
+    }
+
+    console.log(`[Offscreen] AudioContext 已建立，state: ${audioContext.state}, sample rate: ${audioContext.sampleRate}`);
 
     // Step 3: 建立音訊處理節點
     sourceNode = audioContext.createMediaStreamSource(mediaStream);
