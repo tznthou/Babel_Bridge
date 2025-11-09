@@ -50,16 +50,6 @@ export class CryptoUtils {
     // 轉換為字串
     const fingerprintString = features.join('|');
 
-    // 🔍 DEBUG: 記錄完整指紋資訊
-    console.log(`[CryptoUtils][${context}] 瀏覽器指紋診斷:`);
-    console.log(`  環境: ${context}`);
-    console.log(`  userAgent: ${navigator.userAgent}`);
-    console.log(`  language: ${navigator.language}`);
-    console.log(`  timezoneOffset: ${new Date().getTimezoneOffset()}`);
-    console.log(`  hardwareConcurrency: ${navigator.hardwareConcurrency || 'unknown'}`);
-    console.log(`  platform: ${navigator.platform}`);
-    console.log(`  完整指紋字串: ${fingerprintString}`);
-
     // 使用 SHA-256 產生 hash
     const encoder = new TextEncoder();
     const data = encoder.encode(fingerprintString);
@@ -68,8 +58,6 @@ export class CryptoUtils {
     // 轉換為 hex 字串
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const hash = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-
-    console.log(`  SHA-256 Hash: ${hash}`);
 
     return hash;
   }
@@ -140,16 +128,8 @@ export class CryptoUtils {
    */
   static async encrypt(plaintext, password = '') {
     try {
-      console.log('[CryptoUtils] 🔐 開始加密流程');
-
       // 1. 衍生加密金鑰
       const { key, salt } = await this.deriveKey(password);
-
-      // 🔍 DEBUG: 記錄 salt
-      const saltHex = Array.from(salt.slice(0, 8))
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
-      console.log(`  生成的 salt (前8 bytes): ${saltHex}...`);
 
       // 2. 生成隨機 IV (Initialization Vector)
       const iv = crypto.getRandomValues(new Uint8Array(this.IV_LENGTH));
@@ -176,11 +156,7 @@ export class CryptoUtils {
       combined.set(encryptedArray, salt.length + iv.length);
 
       // 5. 轉換為 Base64
-      const result = this.arrayBufferToBase64(combined);
-
-      console.log(`  加密完成，總長度: ${result.length} chars`);
-
-      return result;
+      return this.arrayBufferToBase64(combined);
     } catch (error) {
       console.error('[CryptoUtils] 加密失敗:', error);
       throw new BabelBridgeError(
@@ -199,8 +175,6 @@ export class CryptoUtils {
    */
   static async decrypt(encryptedBase64, password = '') {
     try {
-      console.log('[CryptoUtils] 🔓 開始解密流程');
-
       // 1. Base64 解碼
       const combined = this.base64ToArrayBuffer(encryptedBase64);
 
@@ -208,13 +182,6 @@ export class CryptoUtils {
       const salt = combined.slice(0, this.SALT_LENGTH);
       const iv = combined.slice(this.SALT_LENGTH, this.SALT_LENGTH + this.IV_LENGTH);
       const encryptedData = combined.slice(this.SALT_LENGTH + this.IV_LENGTH);
-
-      // 🔍 DEBUG: 記錄讀取到的 salt
-      const saltHex = Array.from(salt.slice(0, 8))
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
-      console.log(`  讀取到的 salt (前8 bytes): ${saltHex}...`);
-      console.log(`  加密資料長度: ${encryptedBase64.length} chars`);
 
       // 3. 使用相同的 salt 衍生金鑰
       const { key } = await this.deriveKey(password, salt);
@@ -231,11 +198,7 @@ export class CryptoUtils {
 
       // 5. 轉換為字串
       const decoder = new TextDecoder();
-      const result = decoder.decode(decryptedData);
-
-      console.log('  ✅ 解密成功');
-
-      return result;
+      return decoder.decode(decryptedData);
     } catch (error) {
       console.error('[CryptoUtils] ❌ 解密失敗:', error);
 

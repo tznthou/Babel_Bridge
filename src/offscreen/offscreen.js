@@ -48,6 +48,9 @@ const CHUNK_CONFIG = {
   MIN_CHUNK_DURATION: 0.5, // 最小 chunk 長度
 };
 
+// 🚨 Buffer 大小限制（防止記憶體爆炸）
+const MAX_BUFFER_SIZE = AUDIO_CONFIG.SAMPLE_RATE * 30; // 最多 30 秒音訊
+
 /**
  * 初始化 MP3 Encoder Worker
  */
@@ -250,8 +253,15 @@ async function handleStartAudioCapture(captureData, sendResponse) {
     processorNode.onaudioprocess = (event) => {
       const channelData = event.inputBuffer.getChannelData(0);
 
+      // 🚨 防止 buffer 無限增長
+      if (chunkBuffer.length >= MAX_BUFFER_SIZE) {
+        console.warn('[Offscreen] ⚠️ Buffer 已滿，丟棄舊資料');
+        // 保留最近 10 秒的資料
+        const keepSize = AUDIO_CONFIG.SAMPLE_RATE * 10;
+        chunkBuffer.splice(0, chunkBuffer.length - keepSize);
+      }
+
       // 🚀 效能優化：使用循環替代 spread operator，避免堆疊溢出
-      // 原本的 push(...channelData) 每次展開 4096 個元素，造成 GC 壓力
       for (let i = 0; i < channelData.length; i++) {
         chunkBuffer.push(channelData[i]);
       }
@@ -304,11 +314,14 @@ async function extractAndEncodeChunk(chunkSamples, overlapSamples, stepSamples) 
   const startTime = chunkIndex * (stepSamples / AUDIO_CONFIG.SAMPLE_RATE);
   const endTime = startTime + CHUNK_CONFIG.CHUNK_DURATION;
 
-  console.log(`[Offscreen] 提取 Chunk ${chunkIndex}`, {
-    startTime: startTime.toFixed(2),
-    endTime: endTime.toFixed(2),
-    samples: samples.length,
-  });
+  // 減少 log 頻率（只記錄每 10 個 chunk）
+  if (chunkIndex % 10 === 0) {
+    console.log(`[Offscreen] 提取 Chunk ${chunkIndex}`, {
+      startTime: startTime.toFixed(2),
+      endTime: endTime.toFixed(2),
+      samples: samples.length,
+    });
+  }
 
   try {
     // 初始化 Worker (如果需要)
@@ -333,7 +346,10 @@ async function extractAndEncodeChunk(chunkSamples, overlapSamples, stepSamples) 
 
     const result = await resultPromise;
 
-    console.log(`[Offscreen] Chunk ${chunkIndex} 編碼完成，大小: ${result.size} bytes`);
+    // 減少 log（只記錄每 10 個 chunk）
+    if (chunkIndex % 10 === 0) {
+      console.log(`[Offscreen] Chunk ${chunkIndex} 編碼完成，大小: ${result.size} bytes`);
+    }
 
     // 發送編碼結果給 Service Worker
     chrome.runtime.sendMessage({
