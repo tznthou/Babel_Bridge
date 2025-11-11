@@ -51,7 +51,7 @@ flowchart TB
     Offscreen -->|getUserMedia| Offscreen
     Offscreen -->|MediaRecorder<br/>3s timeslice| Offscreen
     Offscreen -->|audio/webm chunk<br/>→ Base64| Background
-    Background -->|createAudioBlob()<br/>重建 Blob| Background
+    Background -->|createAudioBlob 重建<br/>Blob 物件| Background
     Background -->|音訊檔案| Whisper
     Whisper -->|辨識文字 + timestamp| Background
     Background -->|原文字幕| GPT
