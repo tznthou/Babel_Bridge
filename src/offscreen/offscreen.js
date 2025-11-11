@@ -1,118 +1,46 @@
 /**
- * Offscreen Document - 處理音訊擷取、切塊和 MP3 編碼
+ * Offscreen Document - 以 MediaRecorder 擷取 tab 音訊
  *
  * Manifest V3 限制：
- * - Service Worker 不支援 AudioContext、MediaStream、Web Worker
- * - 必須在 Offscreen Document 中處理所有音訊相關操作
+ * - Service Worker 不支援 MediaStream / AudioContext
+ * - 需在 Offscreen Document 取得音訊並以非阻塞方式切片
  *
- * 功能：
- * 1. 使用 streamId 取得 MediaStream
- * 2. 建立 AudioContext 處理音訊
- * 3. 音訊切塊 (Rolling Window)
- * 4. MP3 編碼 (via Worker)
- * 5. 發送處理結果回 Service Worker
- *
- * 通訊流程:
+ * 新流程：
  * Service Worker → getMediaStreamId() → streamId
- * → Offscreen Document → getUserMedia() → MediaStream
- * → AudioContext → AudioChunker → MP3 Worker → MP3 blob
+ * → Offscreen Document (MediaRecorder) → audio/webm chunk
  * → Service Worker → Whisper API
  */
 
-// === MP3 Worker 管理 ===
-let mp3Worker = null;
-let pendingRequests = new Map();
-let requestIdCounter = 0;
-
-// === 音訊擷取狀態 ===
-let audioContext = null;
+// === 狀態 ===
 let mediaStream = null;
-let sourceNode = null;
-let processorNode = null;
-
-// === 音訊重播 ===
-let audioElement = null; // 用於播放音訊的 Audio 元素
-let mediaStreamDestination = null; // 用於輸出音訊流
-
-// === 音訊切塊狀態 ===
-let chunkBuffer = [];
+let mediaRecorder = null;
+let playbackElement = null;
 let chunkIndex = 0;
-let totalSamples = 0;
-let isProcessingChunk = false; // 🔒 防止並發處理
-
-// === 配置 (暫時硬編碼，之後應從 config.js 導入) ===
-const AUDIO_CONFIG = {
-  SAMPLE_RATE: 16000,
-  CHANNELS: 1,
-};
+let captureStartMs = 0;
+let lastChunkTimestampMs = 0;
+let accumulatedDuration = 0;
+let activeMimeType = 'audio/webm;codecs=opus';
 
 const CHUNK_CONFIG = {
-  CHUNK_DURATION: 3, // 3 秒
-  OVERLAP_DURATION: 1, // 1 秒重疊
-  MIN_CHUNK_DURATION: 0.5, // 最小 chunk 長度
+  CHUNK_DURATION: 3, // 3 秒 timeslice
 };
 
-// 🚨 Buffer 大小限制（防止記憶體爆炸）
-const MAX_BUFFER_SIZE = AUDIO_CONFIG.SAMPLE_RATE * 30; // 最多 30 秒音訊
-
-// ⏱️ Worker 請求 timeout (防止卡住)
-const WORKER_TIMEOUT = 30000; // 30 秒
+const RECORDER_PREFERENCES = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/ogg;codecs=opus',
+];
 
 /**
- * 初始化 MP3 Encoder Worker
+ * 選擇第一個被瀏覽器支援的 MediaRecorder MIME 類型
  */
-function initWorker() {
-  if (mp3Worker) {
-    console.log('[Offscreen] Worker 已存在，跳過初始化');
-    return;
+function resolveMimeType() {
+  for (const candidate of RECORDER_PREFERENCES) {
+    if (MediaRecorder.isTypeSupported(candidate)) {
+      return candidate;
+    }
   }
-
-  try {
-    // 創建 Worker（使用 chrome.runtime.getURL 取得正確路徑）
-    const workerUrl = chrome.runtime.getURL('src/workers/mp3-encoder.worker.js');
-    console.log('[Offscreen] 正在初始化 Worker，URL:', workerUrl);
-
-    mp3Worker = new Worker(workerUrl, { type: 'module' });
-
-    // 監聽 Worker 訊息
-    mp3Worker.onmessage = (event) => {
-      const { requestId, type, data, error } = event.data;
-
-      const pending = pendingRequests.get(requestId);
-      if (!pending) {
-        console.warn('[Offscreen] 收到未知 requestId 的回應:', requestId);
-        return;
-      }
-
-      // 清除 timeout
-      if (pending.timeoutId) {
-        clearTimeout(pending.timeoutId);
-      }
-
-      pendingRequests.delete(requestId);
-
-      if (type === 'ENCODE_COMPLETE') {
-        pending.resolve(data);
-      } else if (type === 'ENCODE_ERROR') {
-        pending.reject(new Error(error));
-      }
-    };
-
-    mp3Worker.onerror = (error) => {
-      console.error('[Offscreen] ❌ Worker 錯誤:', error);
-
-      // 拒絕所有待處理的請求
-      for (const [requestId, pending] of pendingRequests.entries()) {
-        pending.reject(new Error('Worker crashed'));
-        pendingRequests.delete(requestId);
-      }
-    };
-
-    console.log('[Offscreen] ✅ MP3 Worker 已初始化');
-  } catch (error) {
-    console.error('[Offscreen] ❌ Worker 初始化失敗:', error);
-    throw error;
-  }
+  return undefined;
 }
 
 /**
@@ -124,25 +52,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[Offscreen] 收到訊息:', type);
 
   switch (type) {
-    case 'OFFSCREEN_INIT_WORKER':
-      handleInitWorker(sendResponse);
-      return true; // 異步回應
-
     case 'OFFSCREEN_START_AUDIO_CAPTURE':
       handleStartAudioCapture(data, sendResponse);
       return true; // 異步回應
 
     case 'OFFSCREEN_STOP_AUDIO_CAPTURE':
       handleStopAudioCapture(sendResponse);
-      return true; // 異步回應
-
-    case 'OFFSCREEN_ENCODE_MP3':
-      handleEncodeMp3(data, sendResponse);
-      return true; // 異步回應
-
-    case 'OFFSCREEN_TERMINATE_WORKER':
-      handleTerminateWorker(sendResponse);
-      return true; // 異步回應
+      return true;
 
     default:
       console.warn('[Offscreen] 未知訊息類型:', type);
@@ -152,415 +68,229 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 /**
- * 處理 Worker 初始化請求
- */
-function handleInitWorker(sendResponse) {
-  try {
-    initWorker();
-    sendResponse({ success: true });
-  } catch (error) {
-    console.error('[Offscreen] Worker 初始化失敗:', error);
-    sendResponse({ success: false, error: error.message });
-  }
-}
-
-/**
- * 處理 MP3 編碼請求
- */
-async function handleEncodeMp3(encodingData, sendResponse) {
-  try {
-    if (!mp3Worker) {
-      initWorker();
-    }
-
-    // 生成唯一的請求 ID
-    const requestId = requestIdCounter++;
-
-    // 創建 Promise 等待 Worker 回應
-    const resultPromise = new Promise((resolve, reject) => {
-      pendingRequests.set(requestId, { resolve, reject });
-    });
-
-    // 發送編碼請求到 Worker
-    mp3Worker.postMessage({
-      type: 'ENCODE',
-      requestId,
-      data: encodingData
-    });
-
-    // 等待結果
-    const result = await resultPromise;
-
-    sendResponse({ success: true, data: result });
-  } catch (error) {
-    console.error('[Offscreen] MP3 編碼失敗:', error);
-    sendResponse({ success: false, error: error.message });
-  }
-}
-
-/**
- * 處理 Worker 終止請求
- */
-function handleTerminateWorker(sendResponse) {
-  try {
-    if (mp3Worker) {
-      mp3Worker.terminate();
-      mp3Worker = null;
-      pendingRequests.clear();
-      console.log('[Offscreen] Worker 已終止');
-    }
-    sendResponse({ success: true });
-  } catch (error) {
-    console.error('[Offscreen] Worker 終止失敗:', error);
-    sendResponse({ success: false, error: error.message });
-  }
-}
-
-/**
- * 處理音訊擷取開始請求
+ * 開始音訊擷取
  */
 async function handleStartAudioCapture(captureData, sendResponse) {
   console.log('[Offscreen] ========================================');
-  console.log('[Offscreen] 📡 handleStartAudioCapture 被調用');
+  console.log('[Offscreen] 🎙️ handleStartAudioCapture');
   console.log('[Offscreen] ========================================');
 
   try {
     const { streamId, tabId } = captureData;
 
-    console.log(`[Offscreen] StreamID: ${streamId}`);
-    console.log(`[Offscreen] TabID: ${tabId}`);
+    console.log('[Offscreen] StreamID:', streamId);
+    console.log('[Offscreen] TabID:', tabId);
 
-    // 停止現有的擷取（如果有）
-    console.log('[Offscreen] 停止現有擷取...');
-    stopAudioCapture();
-    console.log('[Offscreen] ✅ 已停止現有擷取');
+    await stopAudioCapture();
 
-    // Step 1: 使用 streamId 取得 MediaStream
-    console.log('[Offscreen] 📻 正在取得 MediaStream...');
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         mandatory: {
           chromeMediaSource: 'tab',
           chromeMediaSourceId: streamId,
+          suppressLocalAudioPlayback: true,
         },
       },
     });
 
     console.log('[Offscreen] ✅ MediaStream 已取得');
-    console.log('[Offscreen] MediaStream tracks:', mediaStream.getTracks().length);
 
-    // Step 2: 建立 AudioContext
-    console.log('[Offscreen] 🎵 正在建立 AudioContext...');
-    audioContext = new AudioContext({
-      sampleRate: AUDIO_CONFIG.SAMPLE_RATE,
-    });
+    const mimeType = resolveMimeType();
+    activeMimeType = mimeType || 'audio/webm';
 
-    console.log(`[Offscreen] AudioContext state: ${audioContext.state}`);
-    console.log(`[Offscreen] AudioContext sample rate: ${audioContext.sampleRate}`);
+    const recorderOptions = mimeType ? { mimeType, audioBitsPerSecond: 128000 } : { audioBitsPerSecond: 128000 };
+    mediaRecorder = new MediaRecorder(mediaStream, recorderOptions);
 
-    // 確保 AudioContext 處於 running 狀態（避免被 autoplay policy 暫停）
-    if (audioContext.state === 'suspended') {
-      console.log('[Offscreen] ⚠️ AudioContext 處於 suspended，嘗試恢復...');
-      await audioContext.resume();
-      console.log('[Offscreen] ✅ AudioContext 已從暫停狀態恢復');
-    }
+    resetRecorderState();
+    wireRecorderEvents(tabId);
 
-    console.log(`[Offscreen] ✅ AudioContext 已建立，state: ${audioContext.state}`);
+    mediaRecorder.start(CHUNK_CONFIG.CHUNK_DURATION * 1000);
 
-    // Step 3: 建立音訊處理節點
-    console.log('[Offscreen] 🔧 正在建立音訊處理節點...');
-    sourceNode = audioContext.createMediaStreamSource(mediaStream);
-    console.log('[Offscreen] ✅ MediaStreamSource 已建立');
-
-    // 使用 ScriptProcessorNode 處理音訊 (bufferSize: 4096)
-    processorNode = audioContext.createScriptProcessor(4096, 1, 1);
-    console.log('[Offscreen] ✅ ScriptProcessorNode 已建立 (bufferSize: 4096)');
-
-    // 計算切塊參數
-    const chunkSamples = AUDIO_CONFIG.SAMPLE_RATE * CHUNK_CONFIG.CHUNK_DURATION;
-    const overlapSamples = AUDIO_CONFIG.SAMPLE_RATE * CHUNK_CONFIG.OVERLAP_DURATION;
-    const stepSamples = chunkSamples - overlapSamples;
-
-    console.log('[Offscreen] 音訊切塊參數', {
-      chunkSamples,
-      overlapSamples,
-      stepSamples,
-    });
-
-    // Step 4: 處理音訊資料
-    processorNode.onaudioprocess = (event) => {
-      const channelData = event.inputBuffer.getChannelData(0);
-
-      // 🚨 防止 buffer 無限增長
-      if (chunkBuffer.length >= MAX_BUFFER_SIZE) {
-        console.warn('[Offscreen] ⚠️ Buffer 已滿，丟棄舊資料');
-        // 🚀 使用 slice 取代 splice，避免 O(n) 移動操作
-        const keepSize = AUDIO_CONFIG.SAMPLE_RATE * 10;
-        chunkBuffer = chunkBuffer.slice(-keepSize);
-      }
-
-      // 🚀 效能優化：使用循環替代 spread operator，避免堆疊溢出
-      for (let i = 0; i < channelData.length; i++) {
-        chunkBuffer.push(channelData[i]);
-      }
-      totalSamples += channelData.length;
-
-      // 🔒 非阻塞處理：只在沒有正在處理的 chunk 時觸發
-      if (!isProcessingChunk && chunkBuffer.length >= chunkSamples) {
-        processNextChunk(chunkSamples, overlapSamples, stepSamples);
-      }
-    };
-
-    // 連接節點
-    console.log('[Offscreen] 🔗 正在連接音訊節點...');
-    sourceNode.connect(processorNode);
-    console.log('[Offscreen] ✅ sourceNode → processorNode');
-
-    // ⚠️ 重要：不直接連接到 audioContext.destination！
-    // 原因：Offscreen Document 的 destination 不會播放聲音
-    // 解決方案：使用 MediaStreamDestination + Audio 元素
-    console.log('[Offscreen] 🔊 設定音訊重播...');
-
-    // 創建 MediaStreamDestination 來輸出音訊流
-    mediaStreamDestination = audioContext.createMediaStreamDestination();
-    processorNode.connect(mediaStreamDestination);
-    console.log('[Offscreen] ✅ processorNode → mediaStreamDestination');
-
-    // 創建 Audio 元素並連接到音訊流
-    audioElement = new Audio();
-    audioElement.srcObject = mediaStreamDestination.stream;
-
-    // 設定 Audio 屬性
-    audioElement.autoplay = true; // 自動播放
-    audioElement.volume = 1.0; // 最大音量
-
-    console.log('[Offscreen] 🔊 正在啟動音訊播放...');
-
-    try {
-      // 開始播放（可能因為 autoplay policy 而失敗）
-      await audioElement.play();
-      console.log('[Offscreen] ✅ 音訊播放已啟動');
-    } catch (playError) {
-      console.warn('[Offscreen] ⚠️ 自動播放失敗（可能被 autoplay policy 阻擋）:', playError.message);
-      console.warn('[Offscreen] 💡 音訊會在用戶與頁面互動後開始播放');
-    }
-
-    console.log('[Offscreen] ========================================');
-    console.log('[Offscreen] ✅ 音訊處理管線已建立（含重播）');
-    console.log('[Offscreen] ========================================');
-
+    console.log('[Offscreen] ✅ MediaRecorder 已啟動，timeslice:', CHUNK_CONFIG.CHUNK_DURATION, 's');
+    ensurePlaybackMirror();
     sendResponse({ success: true });
   } catch (error) {
-    console.error('[Offscreen] ========================================');
-    console.error('[Offscreen] ❌ 音訊擷取失敗');
-    console.error('[Offscreen] 錯誤類型:', error.name);
-    console.error('[Offscreen] 錯誤訊息:', error.message);
-    console.error('[Offscreen] 錯誤堆疊:', error.stack);
-    console.error('[Offscreen] ========================================');
-    stopAudioCapture();
+    console.error('[Offscreen] ❌ 無法啟動音訊擷取:', error);
+    await stopAudioCapture();
     sendResponse({ success: false, error: error.message });
   }
 }
 
-/**
- * 非阻塞處理下一個 chunk
- * ⚠️ 重要：一次只處理一個 chunk，避免 while + await 阻塞主執行緒
- */
-async function processNextChunk(chunkSamples, overlapSamples, stepSamples) {
-  // 防止並發
-  if (isProcessingChunk) {
-    return;
-  }
-
-  isProcessingChunk = true;
-
-  try {
-    // ✅ 只處理一個 chunk，不使用 while 迴圈
-    if (chunkBuffer.length >= chunkSamples) {
-      await extractAndEncodeChunk(chunkSamples, overlapSamples, stepSamples);
-
-      // ✅ 如果還有資料，用 setTimeout 觸發下一次處理（非阻塞）
-      if (chunkBuffer.length >= chunkSamples) {
-        setTimeout(() => {
-          isProcessingChunk = false;
-          processNextChunk(chunkSamples, overlapSamples, stepSamples);
-        }, 0);
-      } else {
-        isProcessingChunk = false;
-      }
-    } else {
-      isProcessingChunk = false;
-    }
-  } catch (error) {
-    console.error('[Offscreen] processNextChunk 錯誤:', error);
-    isProcessingChunk = false;
-  }
+function resetRecorderState() {
+  chunkIndex = 0;
+  captureStartMs = performance.now();
+  lastChunkTimestampMs = captureStartMs;
+  accumulatedDuration = 0;
 }
 
-/**
- * 從緩衝區提取一個 chunk 並編碼為 MP3
- */
-async function extractAndEncodeChunk(chunkSamples, overlapSamples, stepSamples) {
-  // 取出 chunk
-  const samples = chunkBuffer.slice(0, chunkSamples);
+function wireRecorderEvents(tabId) {
+  mediaRecorder.onstart = () => {
+    console.log('[Offscreen] 🎬 MediaRecorder onstart (Tab', tabId, ')');
+  };
 
-  // 計算時間戳
-  const startTime = chunkIndex * (stepSamples / AUDIO_CONFIG.SAMPLE_RATE);
-  const endTime = startTime + CHUNK_CONFIG.CHUNK_DURATION;
+  mediaRecorder.onerror = (event) => {
+    console.error('[Offscreen] ❌ MediaRecorder 錯誤:', event.error);
+  };
 
-  // 減少 log 頻率（只記錄每 10 個 chunk）
-  if (chunkIndex % 10 === 0) {
-    console.log(`[Offscreen] 提取 Chunk ${chunkIndex}`, {
-      startTime: startTime.toFixed(2),
-      endTime: endTime.toFixed(2),
-      samples: samples.length,
-    });
-  }
+  mediaRecorder.onstop = () => {
+    console.log('[Offscreen] ⏹️ MediaRecorder 已停止');
+    stopPlaybackMirror();
+  };
 
-  try {
-    // 初始化 Worker (如果需要)
-    if (!mp3Worker) {
-      initWorker();
+  mediaRecorder.ondataavailable = (event) => {
+    if (!event.data || event.data.size === 0) {
+      return;
     }
 
-    // 編碼為 MP3
-    const requestId = requestIdCounter++;
+    const now = performance.now();
+    const durationSeconds = Math.max(0.1, (now - lastChunkTimestampMs) / 1000);
+    const startTime = accumulatedDuration;
+    const endTime = startTime + durationSeconds;
 
-    // 🔒 添加 timeout 防止 Worker 卡住
-    const resultPromise = new Promise((resolve, reject) => {
-      pendingRequests.set(requestId, { resolve, reject });
+    lastChunkTimestampMs = now;
+    accumulatedDuration = endTime;
 
-      // Timeout 處理
-      const timeoutId = setTimeout(() => {
-        if (pendingRequests.has(requestId)) {
-          pendingRequests.delete(requestId);
-          reject(new Error(`Worker timeout after ${WORKER_TIMEOUT}ms`));
+    const mimeType = event.data.type || activeMimeType;
+    const blobSize = event.data.size;
+
+    console.log('[Offscreen] 🎧 Chunk 準備完成', {
+      chunkIndex,
+      size: `${(blobSize / 1024).toFixed(2)} KB`,
+      duration: durationSeconds.toFixed(2) + 's',
+      mimeType,
+    });
+
+    const currentChunkIndex = chunkIndex;
+    chunkIndex += 1;
+
+    event.data.arrayBuffer()
+      .then((arrayBuffer) => {
+        const base64Audio = arrayBufferToBase64(arrayBuffer);
+
+        const payload = {
+          chunkIndex: currentChunkIndex,
+          startTime,
+          endTime,
+          audioBase64: base64Audio,
+          audioByteLength: arrayBuffer.byteLength,
+          size: blobSize,
+          duration: durationSeconds,
+          mimeType,
+          tabId,
+        };
+
+        const sendPromise = chrome.runtime.sendMessage({
+          type: 'AUDIO_CHUNK_READY',
+          data: payload,
+        });
+
+        if (sendPromise && typeof sendPromise.catch === 'function') {
+          sendPromise.catch((err) => {
+            console.error('[Offscreen] ❌ 傳送 chunk 失敗:', err);
+          });
         }
-      }, WORKER_TIMEOUT);
+      })
+      .catch((error) => {
+        console.error('[Offscreen] ❌ 轉換音訊資料失敗:', error);
+      });
+  };
+}
 
-      // 儲存 timeoutId 以便取消
-      pendingRequests.get(requestId).timeoutId = timeoutId;
-    });
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
 
-    mp3Worker.postMessage({
-      type: 'ENCODE',
-      requestId,
-      data: {
-        samples: new Float32Array(samples),
-        sampleRate: AUDIO_CONFIG.SAMPLE_RATE,
-      },
-    });
-
-    const result = await resultPromise;
-
-    // 清除 timeout
-    const pending = pendingRequests.get(requestId);
-    if (pending && pending.timeoutId) {
-      clearTimeout(pending.timeoutId);
-    }
-
-    // 減少 log（只記錄每 10 個 chunk）
-    if (chunkIndex % 10 === 0) {
-      console.log(`[Offscreen] Chunk ${chunkIndex} 編碼完成，大小: ${result.size} bytes`);
-    }
-
-    // 發送編碼結果給 Service Worker
-    chrome.runtime.sendMessage({
-      type: 'AUDIO_CHUNK_READY',
-      data: {
-        chunkIndex,
-        startTime,
-        endTime,
-        blob: result.blob,
-        size: result.size,
-        duration: result.duration,
-      },
-    });
-
-    // 🚀 移除已處理的樣本 (使用 slice 取代 splice)
-    chunkBuffer = chunkBuffer.slice(stepSamples);
-    chunkIndex++;
-  } catch (error) {
-    console.error(`[Offscreen] Chunk ${chunkIndex} 編碼失敗:`, error);
-    // 繼續處理下一個 chunk
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const subArray = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, subArray);
   }
+
+  return btoa(binary);
 }
 
 /**
- * 處理音訊擷取停止請求
+ * 停止音訊擷取
  */
 function handleStopAudioCapture(sendResponse) {
-  try {
-    stopAudioCapture();
-    sendResponse({ success: true });
-  } catch (error) {
-    console.error('[Offscreen] 停止音訊擷取失敗:', error);
-    sendResponse({ success: false, error: error.message });
-  }
+  stopAudioCapture()
+    .then(() => sendResponse({ success: true }))
+    .catch((error) => {
+      console.error('[Offscreen] ❌ 停止音訊擷取失敗:', error);
+      sendResponse({ success: false, error: error.message });
+    });
 }
 
-/**
- * 停止音訊擷取並清理資源
- */
-function stopAudioCapture() {
-  console.log('[Offscreen] 停止音訊擷取');
+async function stopAudioCapture() {
+  console.log('[Offscreen] 🛑 stopAudioCapture');
 
-  // 停止音訊重播
-  if (audioElement) {
-    audioElement.pause();
-    audioElement.srcObject = null;
-    audioElement = null;
-    console.log('[Offscreen] ✅ 音訊播放已停止');
+  stopPlaybackMirror();
+
+  if (mediaRecorder) {
+    if (mediaRecorder.state !== 'inactive') {
+      try {
+        mediaRecorder.stop();
+      } catch (error) {
+        console.warn('[Offscreen] 停止 MediaRecorder 時發生錯誤:', error.message);
+      }
+    }
+    mediaRecorder.ondataavailable = null;
+    mediaRecorder.onerror = null;
+    mediaRecorder.onstart = null;
+    mediaRecorder.onstop = null;
+    mediaRecorder = null;
   }
 
-  // 斷開音訊節點
-  if (mediaStreamDestination) {
-    mediaStreamDestination.disconnect();
-    mediaStreamDestination = null;
-  }
-
-  if (processorNode) {
-    processorNode.disconnect();
-    processorNode.onaudioprocess = null;
-    processorNode = null;
-  }
-
-  if (sourceNode) {
-    sourceNode.disconnect();
-    sourceNode = null;
-  }
-
-  // 停止 MediaStream
   if (mediaStream) {
     mediaStream.getTracks().forEach((track) => track.stop());
     mediaStream = null;
   }
 
-  // 關閉 AudioContext
-  if (audioContext && audioContext.state !== 'closed') {
-    audioContext.close();
-    audioContext = null;
-  }
-
-  // 重設狀態
-  chunkBuffer = [];
   chunkIndex = 0;
-  totalSamples = 0;
-  isProcessingChunk = false;
+  accumulatedDuration = 0;
 }
 
-// ============================================
-// 🚀 Offscreen Document 載入完成
-// ============================================
 console.log('[Offscreen] ========================================');
-console.log('[Offscreen] 🚀 Offscreen document 已載入');
-console.log('[Offscreen] Chrome version:', navigator.userAgent);
+console.log('[Offscreen] 🚀 Offscreen document 已載入 (MediaRecorder)');
+console.log('[Offscreen] UserAgent:', navigator.userAgent);
 console.log('[Offscreen] ========================================');
 
-// 嘗試預先初始化 Worker（捕捉錯誤但不阻塞）
-try {
-  console.log('[Offscreen] 🔧 預先初始化 Worker...');
-  initWorker();
-} catch (error) {
-  console.error('[Offscreen] ❌ Worker 預初始化失敗（稍後重試）:', error);
+function ensurePlaybackMirror() {
+  if (!mediaStream) {
+    return;
+  }
+
+  if (playbackElement) {
+    playbackElement.srcObject = mediaStream;
+    return;
+  }
+
+  playbackElement = new Audio();
+  playbackElement.srcObject = mediaStream;
+  playbackElement.autoplay = true;
+  playbackElement.playsInline = true;
+  playbackElement.volume = 1;
+  playbackElement.muted = false;
+
+  const playPromise = playbackElement.play();
+  if (playPromise && typeof playPromise.catch === 'function') {
+    playPromise.catch((error) => {
+      console.warn('[Offscreen] ⚠️ Audio mirror 無法播放:', error.message);
+    });
+  }
+}
+
+function stopPlaybackMirror() {
+  if (!playbackElement) {
+    return;
+  }
+
+  try {
+    playbackElement.pause();
+  } catch (error) {
+    console.warn('[Offscreen] 停止 Audio mirror 錯誤:', error.message);
+  }
+
+  playbackElement.srcObject = null;
+  playbackElement = null;
 }

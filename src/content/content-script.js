@@ -8,6 +8,8 @@
  */
 import { MessageTypes } from '../lib/config.js';
 
+const SEGMENT_RETENTION_SECONDS = 30;
+
 /**
  * Video 元素監聽器
  * 負責偵測並監聽頁面中的 video 元素
@@ -17,6 +19,12 @@ class VideoMonitor {
     this.videoElement = null;
     this.onTimeUpdate = onTimeUpdate;
     this.isMonitoring = false;
+    this.boundHandlers = {
+      timeupdate: this.handleTimeUpdate.bind(this),
+      play: this.handlePlay.bind(this),
+      pause: this.handlePause.bind(this),
+      seeked: this.handleSeeked.bind(this),
+    };
     this.findAndAttach();
   }
 
@@ -62,10 +70,10 @@ class VideoMonitor {
     this.videoElement = video;
 
     // 監聽時間更新事件
-    video.addEventListener('timeupdate', this.handleTimeUpdate.bind(this));
-    video.addEventListener('play', this.handlePlay.bind(this));
-    video.addEventListener('pause', this.handlePause.bind(this));
-    video.addEventListener('seeked', this.handleSeeked.bind(this));
+    video.addEventListener('timeupdate', this.boundHandlers.timeupdate);
+    video.addEventListener('play', this.boundHandlers.play);
+    video.addEventListener('pause', this.boundHandlers.pause);
+    video.addEventListener('seeked', this.boundHandlers.seeked);
 
     this.isMonitoring = true;
 
@@ -80,10 +88,10 @@ class VideoMonitor {
       return;
     }
 
-    this.videoElement.removeEventListener('timeupdate', this.handleTimeUpdate.bind(this));
-    this.videoElement.removeEventListener('play', this.handlePlay.bind(this));
-    this.videoElement.removeEventListener('pause', this.handlePause.bind(this));
-    this.videoElement.removeEventListener('seeked', this.handleSeeked.bind(this));
+    this.videoElement.removeEventListener('timeupdate', this.boundHandlers.timeupdate);
+    this.videoElement.removeEventListener('play', this.boundHandlers.play);
+    this.videoElement.removeEventListener('pause', this.boundHandlers.pause);
+    this.videoElement.removeEventListener('seeked', this.boundHandlers.seeked);
 
     this.videoElement = null;
     this.isMonitoring = false;
@@ -186,6 +194,7 @@ class SubtitleOverlay {
 
     // 立即更新顯示
     const currentTime = this.videoMonitor.getCurrentTime();
+    this.pruneOldSegments(currentTime);
     this.updateDisplay(currentTime);
   }
 
@@ -200,6 +209,8 @@ class SubtitleOverlay {
    * 根據當前時間更新顯示
    */
   updateDisplay(currentTime) {
+    this.pruneOldSegments(currentTime);
+
     // 找出當前時間應該顯示的 segment
     const segmentIndex = this.findSegmentIndex(currentTime);
 
@@ -259,6 +270,35 @@ class SubtitleOverlay {
     if (this.container.style.display !== 'none') {
       this.container.style.display = 'none';
       this.currentSegmentIndex = -1;
+    }
+  }
+
+  /**
+   * 清除過舊的字幕片段，避免記憶體無限成長
+   */
+  pruneOldSegments(currentTime) {
+    if (this.segments.length === 0) {
+      return;
+    }
+
+    const cutoff = Math.max(0, currentTime - SEGMENT_RETENTION_SECONDS);
+    let removeCount = 0;
+
+    while (
+      removeCount < this.segments.length &&
+      this.segments[removeCount].end < cutoff
+    ) {
+      removeCount++;
+    }
+
+    if (removeCount > 0) {
+      this.segments.splice(0, removeCount);
+      if (this.currentSegmentIndex !== -1) {
+        this.currentSegmentIndex -= removeCount;
+        if (this.currentSegmentIndex < -1) {
+          this.currentSegmentIndex = -1;
+        }
+      }
     }
   }
 

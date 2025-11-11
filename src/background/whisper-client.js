@@ -56,7 +56,7 @@ export class WhisperClient {
 
     // 準備 FormData
     const formData = new FormData();
-    formData.append('file', audioBlob, 'audio.mp3');
+    formData.append('file', audioBlob, this.getFileNameFromOptions(audioBlob, options));
     formData.append('model', WHISPER_CONFIG.MODEL);
     formData.append('response_format', WHISPER_CONFIG.RESPONSE_FORMAT);
     formData.append('temperature', options.temperature || WHISPER_CONFIG.TEMPERATURE);
@@ -253,6 +253,33 @@ export class WhisperClient {
     const speechScore = 1 - (segment.no_speech_prob || 0);
 
     return (logprobScore * 0.7 + speechScore * 0.3).toFixed(3);
+  }
+
+  /**
+   * 依據 MIME 類型或選項推斷檔名
+   * @private
+   */
+  getFileNameFromOptions(audioBlob, options = {}) {
+    if (options.fileName) {
+      return options.fileName;
+    }
+
+    const mimeType = (options.mimeType || audioBlob.type || '').toLowerCase();
+
+    if (mimeType.includes('webm')) {
+      return 'audio.webm';
+    }
+    if (mimeType.includes('ogg')) {
+      return 'audio.ogg';
+    }
+    if (mimeType.includes('wav')) {
+      return 'audio.wav';
+    }
+    if (mimeType.includes('m4a')) {
+      return 'audio.m4a';
+    }
+
+    return 'audio.mp3';
   }
 
   /**

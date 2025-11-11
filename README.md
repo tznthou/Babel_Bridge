@@ -34,21 +34,24 @@ flowchart TB
         Video[影片播放]
         ContentScript[Content Script<br/>字幕顯示層]
     end
-    
+
     subgraph Extension["Extension 核心"]
         Background[Background Service Worker<br/>音訊處理中樞]
-        WebWorker[Web Worker<br/>音訊編碼]
+        Offscreen[Offscreen Document<br/>MediaRecorder + Base64]
         Popup[Popup UI<br/>控制面板]
     end
-    
+
     subgraph APIs["外部 API"]
         Whisper[OpenAI Whisper API<br/>語音辨識]
         GPT[GPT-4o-mini<br/>翻譯優化]
     end
-    
+
     Video -->|chrome.tabCapture| Background
-    Background -->|音訊段<br/>3秒/段| WebWorker
-    WebWorker -->|編碼 mp3| Background
+    Background -->|streamId| Offscreen
+    Offscreen -->|getUserMedia| Offscreen
+    Offscreen -->|MediaRecorder<br/>3s timeslice| Offscreen
+    Offscreen -->|audio/webm chunk<br/>→ Base64| Background
+    Background -->|createAudioBlob()<br/>重建 Blob| Background
     Background -->|音訊檔案| Whisper
     Whisper -->|辨識文字 + timestamp| Background
     Background -->|原文字幕| GPT
@@ -59,9 +62,9 @@ flowchart TB
 ```
 
 **架構說明:**
-- **Background Service Worker**: 核心控制器,管理音訊擷取、切段、API 呼叫與字幕分發
-- **Web Worker**: 處理音訊編碼工作,避免阻塞主執行緒
-- **Content Script**: 注入目標網頁,負責字幕 UI 渲染與影片同步
+- **Background Service Worker**: 核心控制器,管理音訊擷取、Base64 重建、API 呼叫與字幕分發
+- **Offscreen Document**: 使用 MediaRecorder 產生 audio/webm chunk（3 秒 timeslice），轉為 Base64 傳輸避免 MV3 Blob 失真
+- **Content Script**: 注入目標網頁,負責字幕 UI 渲染與影片時間同步（VideoMonitor）
 - **Popup UI**: 提供開關控制、語言選擇、API Key 設定等功能
 
 ---
@@ -72,12 +75,13 @@ flowchart TB
 |------|------|------|
 | 核心框架 | Chrome Extension (Manifest V3) | 使用最新標準 |
 | 程式語言 | JavaScript (ES6+) | 模組化設計,完整 JSDoc 註解 |
-| 音訊處理 | Web Audio API, MediaStream API | chrome.tabCapture 擷取音訊流 |
+| 音訊處理 | MediaRecorder API, MediaStream API | **關鍵遷移**: 移除 ScriptProcessorNode（死鎖元兇） |
 | 語音辨識 | OpenAI Whisper API | 高準確度,支援 90+ 語言 |
 | 翻譯引擎 | OpenAI GPT-4o-mini | 智慧翻譯與斷句優化 |
 | **安全加密** | **Web Crypto API** | **AES-256-GCM + PBKDF2 (100k 迭代)** |
 | UI 框架 | 原生 DOM / 輕量級框架 | Content Script 需避免衝突 |
-| 音訊編碼 | lamejs (MP3 Encoder) | Web Worker 中進行編碼 |
+| 音訊擷取 | MediaRecorder (audio/webm) | Offscreen Document 內以 3 秒 timeslice 產生 chunk |
+| 跨 Context 傳輸 | Base64 序列化 | 避免 MV3 Blob 失真（structured clone 不支援 Blob） |
 | 儲存 | chrome.storage.local | 加密儲存 API Key 與用戶設定 |
 | 建置工具 | Vite | 現代化打包與開發體驗 |
 | 測試框架 | Jest / Playwright | 單元測試與 E2E 測試 (待實作) |
@@ -90,12 +94,12 @@ flowchart TB
 Babel Bridge/
 ├── src/
 │   ├── background/                  # 📦 Background 服務
-│   │   ├── service-worker.js        # ✅ 主控制器 (音訊處理管線編排)
+│   │   ├── service-worker.js        # ✅ 主控制器 (音訊處理管線編排 + Base64 重建)
 │   │   ├── audio-capture.js         # ✅ 音訊擷取 (chrome.tabCapture)
-│   │   ├── audio-chunker.js         # ✅ Rolling Window 切塊
-│   │   ├── mp3-encoder.js           # ✅ MP3 編碼器包裝
 │   │   ├── whisper-client.js        # ✅ Whisper API 整合
 │   │   └── subtitle-processor.js    # ✅ OverlapProcessor (核心去重與斷句)
+│   ├── offscreen/                   # 📦 Offscreen Document
+│   │   └── offscreen.js             # ✅ MediaRecorder + Base64 傳輸
 │   ├── content/                     # 📦 Content Script
 │   │   ├── content-script.js        # ✅ 字幕顯示 (VideoMonitor + SubtitleOverlay)
 │   │   └── subtitle-overlay.css     # ✅ 字幕樣式
@@ -103,8 +107,6 @@ Babel Bridge/
 │   │   ├── popup.html               # ✅ 控制面板 UI
 │   │   ├── popup.js                 # ✅ 面板邏輯 (含加密整合)
 │   │   └── popup.css                # ✅ 面板樣式
-│   ├── workers/                     # 📦 Web Workers
-│   │   └── mp3-encoder.worker.js    # ✅ MP3 音訊編碼 Worker (lamejs)
 │   ├── lib/                         # 📦 核心函式庫
 │   │   ├── errors.js                # ✅ 統一錯誤處理 (BabelBridgeError)
 │   │   ├── error-handler.js         # ✅ 錯誤處理器
@@ -118,15 +120,19 @@ Babel Bridge/
 ├── docs/
 │   ├── PRD.md                       # ✅ 產品需求文件
 │   ├── SPEC.md                      # ✅ 系統規格文件
-│   └── CLAUDE.md                    # ✅ Claude 開發指引
+│   ├── CLAUDE.md                    # ✅ Claude 開發指引
+│   └── NewWay.md                    # ✅ MediaRecorder 管線遷移記錄
 ├── .serena/                         # AI 記憶檔案 (不納入版控)
 │   └── memories/
+│       ├── mediarecorder-migration-2025-11-11.md  # ✅ 管線遷移完整報告
+│       ├── browser-freeze-debugging-2025-11-09.md
+│       ├── phase1-completion-2025-11-09.md
 │       ├── development-progress-2025-11-08.md
 │       ├── project-status-2025-11-08.md
 │       └── testing-2025-11-08.md
 ├── .gitignore                       # ✅ Git 忽略清單
-├── package.json                     # ✅ 專案配置
-├── vite.config.js                   # ✅ Vite 建置配置
+├── package.json                     # ✅ 專案配置 (已移除 lamejs 依賴)
+├── vite.config.js                   # ✅ Vite 建置配置 (已移除 Web Worker 配置)
 ├── README.md                        # 本檔案
 └── LICENSE                          # MIT 授權 (待新增)
 ```
@@ -134,8 +140,10 @@ Babel Bridge/
 **圖例說明**:
 - ✅ 已完成實作並測試
 - 📦 核心模組目錄
+- ~~❌ 已移除~~: `audio-chunker.js`, `mp3-encoder.js`, `mp3-encoder.worker.js` (ScriptProcessorNode 死鎖元兇)
+- **關鍵遷移** (2025-11-11): ScriptProcessorNode → MediaRecorder（完全修復瀏覽器凍結問題）
 - Phase 0 已完成: API Key 加密管理系統
-- Phase 1 已完成: 完整音訊處理管線 + 字幕顯示
+- Phase 1 已完成: MediaRecorder 音訊管線 + 字幕顯示
 
 ---
 
@@ -295,11 +303,15 @@ npm run package
 
 ---
 
-### Phase 1: 基礎辨識功能 ✅ (已完成 - 4 天)
+### Phase 1: 基礎辨識功能 ✅ (已完成，含關鍵架構遷移 - 4 天)
 
 - ✅ **音訊擷取**: chrome.tabCapture API 整合 - `audio-capture.js` (182 lines)
-- ✅ **音訊切塊**: Rolling Window 策略 (3 秒/段,重疊 1 秒) - `audio-chunker.js` (227 lines)
-- ✅ **MP3 編碼**: Web Worker + lamejs 整合 - `mp3-encoder.js` (192 lines) + Worker (124 lines)
+- ✅ ~~**音訊切塊**: Rolling Window 策略~~ → **已移除**（改用 MediaRecorder）
+- ✅ **MediaRecorder 管線**（關鍵遷移）- `offscreen/offscreen.js`
+  - 移除 ScriptProcessorNode + MP3 編碼（死鎖元兇）
+  - MediaRecorder 直接產生 audio/webm chunk（3 秒 timeslice）
+  - Base64 傳輸避免 MV3 Blob 失真
+  - suppressLocalAudioPlayback + Audio 鏡射播放（避免回音）
 - ✅ **Whisper API**: 語音辨識整合 - `whisper-client.js` (265 lines)
 - ✅ **OverlapProcessor**: 斷句優化邏輯 - `subtitle-processor.js` (418 lines)
 - ✅ **基礎字幕顯示**: Content Script 注入與字幕渲染 - `content-script.js` (329 lines) + CSS (96 lines)
@@ -307,14 +319,15 @@ npm run package
 - ✅ **多語言斷句**: 支援中/英/日/韓/歐洲語系 - `language-rules.js` (352 lines)
 - ✅ **文字相似度**: Levenshtein Distance 實作 - `text-similarity.js`
 
-**驗收標準**: ✅ 已通過 - console 能看到即時辨識結果,字幕與影片完美同步
+**驗收標準**: ✅ 已通過 - console 能看到即時辨識結果,字幕與影片完美同步，瀏覽器不再凍結
 
 **關鍵成果**:
-- 完整音訊處理管線已建立 (~2,900 lines)
+- 完整 MediaRecorder 管線已建立（修復瀏覽器凍結問題）
 - OverlapProcessor 雙重去重策略 (80% time OR 50% time + 80% text similarity)
 - Content Script 時間同步修復 (支援 play/pause/seek)
 - 測試覆蓋: OverlapProcessor 100%, 整體 Demo 頁面 5 個測試
-- Git 提交: `1aa0cf5` (pipeline) + `051ee78` (time sync)
+- **架構遷移**: ScriptProcessorNode → MediaRecorder（2025-11-09 至 2025-11-11）
+- Git 提交: `1aa0cf5` (pipeline) + `051ee78` (time sync) + `0c7a215` (MediaRecorder 修復)
 
 ---
 
@@ -351,6 +364,9 @@ npm run package
 | [`SPEC.md`](./SPEC.md) | 系統規格與 API 契約 |
 
 ### 開發記錄 (Serena AI 記憶)
+- **`NewWay.md`** - **MediaRecorder 管線遷移完整記錄**（2025-11-11，瀏覽器凍結修復）
+- **`.serena/memories/mediarecorder-migration-2025-11-11.md`** - **管線遷移技術報告**（含診斷方法論與深刻反思）
+- `.serena/memories/browser-freeze-debugging-2025-11-09.md` - 瀏覽器凍結問題診斷記錄（已修復）
 - `.serena/memories/phase1-completion-2025-11-09.md` - **Phase 1 完整記錄** (11 個模組詳細規格)
 - `.serena/memories/phase1-overlap-processor-completion-2025-11-09.md` - OverlapProcessor 完成記錄
 - `.serena/memories/critical-bug-fix-2025-11-09.md` - Content Script 時間同步修復
@@ -369,13 +385,16 @@ npm run package
 
 **Phase 1 音訊處理管線**:
 - `src/background/audio-capture.js` - 音訊擷取 (chrome.tabCapture)
-- `src/background/audio-chunker.js` - Rolling Window 切塊
-- `src/background/mp3-encoder.js` - MP3 編碼器包裝
-- `src/workers/mp3-encoder.worker.js` - MP3 編碼 Worker (lamejs)
+- `src/offscreen/offscreen.js` - **MediaRecorder 管線** (audio/webm chunk + Base64 傳輸)
 - `src/background/whisper-client.js` - Whisper API 整合
 - `src/background/subtitle-processor.js` - **OverlapProcessor** (核心去重與斷句)
 - `src/lib/language-rules.js` - 多語言斷句規則
 - `src/lib/text-similarity.js` - Levenshtein Distance 相似度計算
+
+**已移除（死鎖元兇）**:
+- ~~`src/background/audio-chunker.js`~~ - ScriptProcessorNode 切塊（已移除）
+- ~~`src/background/mp3-encoder.js`~~ - MP3 編碼（已移除）
+- ~~`src/workers/mp3-encoder.worker.js`~~ - MP3 編碼 Worker（已移除）
 
 **Phase 1 字幕顯示**:
 - `src/content/content-script.js` - Content Script (VideoMonitor + SubtitleOverlay)
@@ -425,7 +444,6 @@ MIT License © 2025 Babel Bridge Contributors
 本專案的實作過程參考了以下優秀的開源專案，特此致謝：
 
 ### 核心依賴 (Runtime Dependencies)
-- [lamejs](https://github.com/zhuker/lamejs) (LGPL-3.0) by @zhuker - JavaScript MP3 Encoder，用於音訊編碼
 
 ### 文字相似度與去重演算法
 - [Natural](https://github.com/NaturalNode/natural) (MIT) - Levenshtein Distance 演算法實作
@@ -445,12 +463,16 @@ MIT License © 2025 Babel Bridge Contributors
 
 **授權說明**：
 - 本專案採用 **MIT License**
-- **Runtime Dependency**: lamejs (LGPL-3.0) 通過 npm 動態鏈接使用，完全合規
 - 所有引用的 MIT/Apache 2.0 專案皆保留原版權聲明
 - AGPL-3.0 專案僅作為架構參考，未使用其程式碼
 - **OpenAI**: 提供強大的 Whisper 與 GPT API
 - **聾啞社群**: 給予專案靈感與回饋
 - **開源貢獻者**: 讓這個專案更加完善
+
+**技術遷移記錄**（2025-11-11）：
+- ✅ 移除 lamejs (LGPL-3.0) 依賴，改用 Chrome 原生 MediaRecorder API
+- ✅ 移除 ScriptProcessorNode（死鎖元兇），完全修復瀏覽器凍結問題
+- ✅ 採用 audio/webm 格式，Whisper API 直接支援，無需 MP3 編碼
 
 ---
 

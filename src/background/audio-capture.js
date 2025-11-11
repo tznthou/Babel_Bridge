@@ -150,9 +150,9 @@ export class AudioCapture {
       try {
         await chrome.offscreen.createDocument({
           url: this.offscreenDocumentPath,
-          reasons: ['AUDIO_PLAYBACK', 'WORKERS'], // AUDIO_PLAYBACK 用於 AudioContext
+          reasons: ['USER_MEDIA'],
           justification:
-            'Audio capture requires AudioContext and Web Workers, which are not available in Service Workers',
+            'Tab audio capture requires MediaRecorder and MediaStream APIs that are unavailable in Service Workers',
         });
 
         console.log('[AudioCapture] ✅ Offscreen Document 創建成功');

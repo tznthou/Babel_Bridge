@@ -95,21 +95,43 @@ class SubtitleService {
   }
 
   /**
-   * 處理音訊 chunk (來自 Offscreen Document 的已編碼 MP3)
+   * 處理音訊 chunk (來自 Offscreen Document 的 audio/webm)
    * @private
    */
   async processChunk(chunkData) {
     try {
-      const { chunkIndex, startTime, endTime, blob, size } = chunkData;
+      const {
+        chunkIndex,
+        startTime,
+        endTime,
+        audioBuffer,
+        audioBase64,
+        blob,
+        size,
+        mimeType,
+        duration,
+      } = chunkData;
 
       console.log(`[SubtitleService] 處理 Chunk ${chunkIndex}`, {
         startTime: startTime.toFixed(2),
         endTime: endTime.toFixed(2),
         size: `${(size / 1024).toFixed(2)} KB`,
+        mimeType: mimeType || 'unknown',
+        hasBase64: Boolean(audioBase64),
       });
 
-      // 1. 送至 Whisper 辨識 (blob 已經是 MP3 格式)
-      const transcription = await this.whisperClient.transcribe(blob);
+      const audioBlob = await this.createAudioBlob({
+        audioBuffer,
+        audioBase64,
+        blob,
+        mimeType,
+      });
+
+      // 1. 送至 Whisper 辨識 (支援音訊格式由 mimeType 決定)
+      const transcription = await this.whisperClient.transcribe(audioBlob, {
+        mimeType,
+        chunkIndex,
+      });
 
       console.log(`[SubtitleService] Whisper 辨識完成`, {
         text: transcription.text,
@@ -129,7 +151,10 @@ class SubtitleService {
       });
 
       // 3. 記錄成本
-      await APIKeyManager.trackWhisperUsage(endTime - startTime);
+      const durationSeconds = typeof duration === 'number'
+        ? duration
+        : endTime - startTime;
+      await APIKeyManager.trackWhisperUsage(durationSeconds);
 
       // 4. 發送字幕到 Content Script (只發送新的 segments)
       if (processedSegments.length > 0) {
@@ -149,6 +174,132 @@ class SubtitleService {
         operation: 'process_chunk',
         chunkIndex: chunkData.chunkIndex,
       });
+    }
+  }
+
+  /**
+   * 從 chunkData 重建可用的 Blob
+   */
+  async createAudioBlob({ audioBuffer, audioBase64, blob, mimeType }) {
+    const type = mimeType || blob?.type || 'audio/webm';
+
+    if (audioBase64) {
+      return this.blobFromBase64(audioBase64, type);
+    }
+
+    if (audioBuffer instanceof ArrayBuffer) {
+      return new Blob([audioBuffer], { type });
+    }
+
+    if (audioBuffer && audioBuffer.buffer instanceof ArrayBuffer) {
+      return new Blob([audioBuffer.buffer], { type });
+    }
+
+    if (blob instanceof Blob) {
+      return blob;
+    }
+
+    if (blob && typeof blob === 'object') {
+      if (typeof blob.arrayBuffer === 'function') {
+        const buffer = await blob.arrayBuffer();
+        return new Blob([buffer], { type });
+      }
+
+      const reconstructed = this.extractArrayBuffer(blob);
+      if (reconstructed) {
+        return new Blob([reconstructed], { type });
+      }
+    }
+
+    throw new BabelBridgeError(
+      ErrorCodes.UNKNOWN_ERROR,
+      'Invalid audio data received from Offscreen Document',
+      {
+        hasAudioBuffer: Boolean(audioBuffer),
+        blobKeys: blob ? Object.keys(blob) : [],
+      }
+    );
+  }
+
+  extractArrayBuffer(blobLike) {
+    if (blobLike.data instanceof ArrayBuffer) {
+      return blobLike.data;
+    }
+
+    if (
+      blobLike.data &&
+      typeof blobLike.data === 'object' &&
+      blobLike.data.type === 'Buffer' &&
+      Array.isArray(blobLike.data.data)
+    ) {
+      return Uint8Array.from(blobLike.data.data).buffer;
+    }
+
+    if (Array.isArray(blobLike.data)) {
+      const buffers = blobLike.data
+        .map((part) => {
+          if (part instanceof ArrayBuffer) {
+            return part;
+          }
+          if (
+            part &&
+            typeof part === 'object' &&
+            part.type === 'Buffer' &&
+            Array.isArray(part.data)
+          ) {
+            return Uint8Array.from(part.data).buffer;
+          }
+          if (part && part.buffer instanceof ArrayBuffer) {
+            return part.buffer;
+          }
+          return null;
+        })
+        .filter(Boolean);
+
+      if (buffers.length === 0) {
+        return null;
+      }
+
+      const totalLength = buffers.reduce(
+        (sum, buffer) => sum + buffer.byteLength,
+        0
+      );
+      const merged = new Uint8Array(totalLength);
+      let offset = 0;
+      for (const buffer of buffers) {
+        merged.set(new Uint8Array(buffer), offset);
+        offset += buffer.byteLength;
+      }
+
+      return merged.buffer;
+    }
+
+    return null;
+  }
+
+  blobFromBase64(base64, type) {
+    try {
+      let binary;
+      if (typeof atob === 'function') {
+        binary = atob(base64);
+      } else if (typeof Buffer !== 'undefined') {
+        binary = Buffer.from(base64, 'base64').toString('binary');
+      } else {
+        throw new Error('Base64 decoder not available');
+      }
+
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return new Blob([bytes.buffer], { type });
+    } catch (error) {
+      throw new BabelBridgeError(
+        ErrorCodes.UNKNOWN_ERROR,
+        'Failed to decode audio chunk (base64)',
+        { error: error.message }
+      );
     }
   }
 
@@ -178,7 +329,9 @@ class SubtitleService {
    */
   cleanup() {
     if (this.audioCapture) {
-      this.audioCapture.stop();
+      this.audioCapture.stop().catch((error) => {
+        console.error('[SubtitleService] 停止音訊擷取時發生錯誤:', error);
+      });
       this.audioCapture = null;
     }
 

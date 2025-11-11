@@ -27,8 +27,6 @@ Third-Party Licenses
 
 This project uses the following third-party libraries:
 
-1. lamejs (LGPL-3.0)
-   - Repository: https://github.com/zhuker/lamejs
    - License: GNU Lesser General Public License v3.0
    - Usage: Dynamically linked via npm (fully compliant with LGPL-3.0)
    - Copyright (c) Alex Zhukov

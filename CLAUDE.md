@@ -58,22 +58,42 @@ npm run format            # Prettier 格式化
 ### 音訊處理流程 (Critical Path)
 
 ```
-chrome.tabCapture → AudioCapture → AudioChunker (Rolling Window)
-→ MP3Encoder Worker (lamejs) → WhisperClient (API)
-→ OverlapProcessor (斷句優化 + 去重) → Content Script (時間同步顯示)
+chrome.tabCapture → getUserMedia(tab audio) → MediaRecorder (3s timeslice)
+→ audio/webm chunk → ArrayBuffer → Base64 → Service Worker
+→ createAudioBlob() 重建 → Whisper API → OverlapProcessor (斷句優化 + 去重)
+→ Content Script (時間同步顯示)
 ```
 
 **完整流程細節**:
-1. **AudioCapture**: 使用 `chrome.tabCapture.capture()` 擷取 tab 音訊流
-2. **AudioChunker**: 3 秒音訊段 + 1 秒重疊區 (Rolling Window)
-3. **MP3Encoder Worker**: Float32 → Int16 → MP3 (16kHz, 單聲道, 128kbps)
-4. **WhisperClient**: 上傳 MP3 → Whisper API → verbose_json (含 segments 與時間戳)
-5. **OverlapProcessor**:
+1. **AudioCapture (Offscreen Document)**:
+   - 使用 `getUserMedia({audio: {chromeMediaSource: 'tab'}})` 擷取 tab 音訊流
+   - 設定 `suppressLocalAudioPlayback: true` 讓 Chrome 靜音原分頁
+   - 用 Audio 元件鏡射 MediaStream 播放（單一音訊路徑，避免回音）
+
+2. **MediaRecorder 管線**:
+   - 直接對 MediaStream 啟動 `MediaRecorder`
+   - 以 3 秒 timeslice 產生 audio/webm chunk (`mediaRecorder.start(3000)`)
+   - **關鍵優勢**：無需 MP3 編碼，避免 ScriptProcessorNode 死鎖問題
+
+3. **Base64 傳輸 (MV3 跨 Context 通訊)**:
+   - Offscreen 端：chunk (Blob) → ArrayBuffer → Base64 + metadata
+   - 透過 `chrome.runtime.sendMessage` 傳給 Service Worker
+   - 避免 Blob 在 MV3 context 間失真（structured clone 不完整支援 Blob）
+
+4. **Service Worker 重建 Blob**:
+   - `createAudioBlob()` 將 Base64 → ArrayBuffer → Blob
+   - 優先使用 Base64，其次 ArrayBuffer，最後相容舊版 Blob
+   - 包含錯誤處理：若重建失敗拋出 `BabelBridgeError`
+
+5. **WhisperClient**: 上傳音訊 chunk → Whisper API → verbose_json (含 segments 與時間戳)
+
+6. **OverlapProcessor**:
    - 調整 segments 時間戳為絕對時間
    - 比對重疊區 (80% time OR 50% time + 80% text similarity)
    - 過濾重複 segments (15-25% 過濾率)
    - 多語言斷句優化
-6. **Content Script**:
+
+7. **Content Script**:
    - VideoMonitor 監聽 video.currentTime
    - 根據時間動態顯示對應 segment
    - 支援 play/pause/seek 事件
@@ -181,6 +201,61 @@ refactor: simplify error handling
 - 每個公開函數都應有 JSDoc 註解
 - 關鍵流程需有整合測試 (如 `audio-pipeline.test.js`)
 
+## 架構級問題診斷方法論
+
+當遇到系統級凍結/崩潰/死鎖問題時，按以下順序診斷：
+
+### 1. 識別 Deprecated API 在非標準環境的已知問題
+- 第一時間檢查是否使用已過時的 API（如 ScriptProcessorNode, document.write）
+- 檢查這些 API 在特殊環境（Offscreen Document, Service Worker, Iframe）的兼容性
+- 查閱 [Chrome Bug Tracker](https://bugs.chromium.org/) 與 [Chromium Issue Tracker](https://issues.chromium.org/) 相關 issue
+
+### 2. 質疑架構選擇，而非只調試環境
+- 問：「為什麼需要這個模組？能否用原生 API 替代？」
+- 問：「這個組合（API A + API B + 環境 C）是否有已知衝突？」
+- **優先考慮移除問題模組，而非修補問題模組**
+- 範例：ScriptProcessorNode → MediaRecorder（根本解決，而非修補）
+
+### 3. 連結已有的知識線索
+- 重新審視文件中所有「潛在問題」「技術債務」「已過時」的描述
+- 檢查是否與當前問題有關聯
+- **避免知識孤島**：文件 A 的線索應該用於診斷問題 B
+- 範例：CLAUDE.md 提到「潛在死鎖」應立刻聯想到凍結問題
+
+### 4. 識別跨 Context 傳輸陷阱（MV3 特有）
+- Service Worker ↔ Offscreen/Content Script 間避免直接傳 Blob/File/Function
+- 優先使用可序列化物件：ArrayBuffer, Base64 String, JSON
+- 測試 [structured clone](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Structured_clone_algorithm) 對複雜物件的支援
+- 必要時自行序列化/反序列化（如 Base64 + 重建 Blob）
+
+### 5. 最小化測試法
+- 簡化問題模組，只保留最小可重現程式碼
+- 逐步加入功能，精確定位凍結/錯誤發生點
+- 每一步都記錄 console.log，確保執行流程透明
+
+**案例研究：瀏覽器凍結問題（2025-11-09 至 2025-11-11）**
+
+❌ **錯誤診斷路徑**：
+1. 懷疑 Offscreen Document headless 環境限制
+2. 調試 Audio 元素在 headless 的行為
+3. 加強日誌追蹤凍結發生點
+4. 考慮放棄音訊重播功能
+
+→ 花費大量時間在**環境調試**，忽略了**架構問題**
+
+✅ **正確診斷路徑**（應該採用的）：
+1. 識別 ScriptProcessorNode 已 deprecated（文件已提到）
+2. 查詢 ScriptProcessorNode + Offscreen Document 兼容性
+3. 發現 ScriptProcessorNode + AudioContext + tabCapture 組合觸發死鎖
+4. **替換整個管線**：改用 MediaRecorder（原生、穩定、無需編碼）
+
+→ **根本解決**：移除死鎖元兇，而非修補症狀
+
+**關鍵教訓**：
+- 技術債務不只是「未來問題」，可能是**當前危機的根源**
+- 架構選擇錯誤 > 實作細節錯誤（前者需要重構，後者只需調試）
+- 文件中的「潛在問題」應優先與當前故障關聯，而非忽略
+
 ## 關鍵技術決策
 
 1. **為何使用 Manifest V3**
@@ -189,23 +264,47 @@ refactor: simplify error handling
 2. **為何選擇 Rolling Window 而非固定切段**
    固定切段會在句子中間切斷,導致斷句錯誤。重疊區讓我們能事後優化斷句點。
 
-3. **為何音訊編碼在 Web Worker**
-   MP3 編碼是 CPU 密集操作,在 Worker 執行避免阻塞 Service Worker 主執行緒。
+3. **為何改用 MediaRecorder（關鍵架構決策）**
+   **根本原因**：ScriptProcessorNode + AudioContext 在 Offscreen Document 中與 tabCapture 組合會觸發 Chrome 底層死鎖，導致瀏覽器完全凍結。
 
-4. **為何使用 GPT-4o-mini 而非 GPT-4o**
+   **MediaRecorder 優勢**：
+   - ✅ **避免死鎖**：無需 ScriptProcessorNode（已 deprecated 且是死鎖元兇）
+   - ✅ **無需 MP3 編碼**：直接產生 audio/webm 格式，降低 CPU 負載
+   - ✅ **Chrome 原生優化**：穩定性高，未來兼容性佳
+   - ✅ **Whisper 直接支援**：webm 格式可直接上傳，無需轉檔
+   - ⚠️ **需配合 Base64 傳輸**：避免 MV3 Blob 失真問題（見下條）
+
+   **修復歷程**：2025-11-09 至 2025-11-11，從瀏覽器凍結問題追溯到 ScriptProcessorNode 根因，完全重構音訊管線。
+
+4. **為何使用 Base64 傳輸音訊 chunk（MV3 特有問題）**
+   **根本原因**：Manifest V3 架構下，Service Worker ↔ Offscreen Document 間傳輸 Blob 會失真（structured clone 不完整支援 Blob/File）。
+
+   **解決方案**：
+   1. Offscreen 端：`Blob` → `ArrayBuffer` → `Base64` + metadata (`mimeType`, `chunkIndex`, `duration`)
+   2. 透過 `chrome.runtime.sendMessage` 傳輸（只支援可序列化物件）
+   3. Service Worker 端：`createAudioBlob()` 將 `Base64` → `ArrayBuffer` → `Blob`
+   4. 重建的 Blob 再送入 Whisper API（FormData）
+
+   **容錯機制**：
+   - 優先使用 Base64（瀏覽器 `atob` + Node `Buffer`）
+   - 其次 ArrayBuffer（相容舊版）
+   - 最後 Blob（向後兼容，但不推薦）
+   - 失敗時拋出 `BabelBridgeError` 並附帶診斷資訊
+
+5. **為何使用 GPT-4o-mini 而非 GPT-4o**
    成本考量。翻譯字幕是簡單任務,mini 版已足夠 (價格低 10 倍)。
 
-5. **為何需要 OverlapProcessor**
+6. **為何需要 OverlapProcessor**
    Whisper 無法保證相鄰音訊段的辨識結果在重疊區一致,需要人工比對去重與斷句優化。
 
-6. **為何使用 AES-GCM 加密 API Key**
+7. **為何使用 AES-GCM 加密 API Key**
    防止惡意 Extension 或本地惡意軟體竊取 API Key。使用 AES-256-GCM (AEAD) 提供機密性與完整性保護,PBKDF2-100k 迭代符合 OWASP 2023 建議,瀏覽器指紋衍生金鑰無需使用者記憶密碼。安全評分: 96/100。
 
 ## 常見問題除錯
 
 ### 字幕延遲過高 (> 8 秒)
 檢查點:
-1. **音訊編碼時間** (應 < 500ms) - 查看 Console `[SubtitleService] MP3 編碼完成`
+1. **音訊 chunk 產生時間** (應 < 500ms) - 查看 Console `[Offscreen] 🎧 Chunk 準備完成`
 2. **Whisper API 響應時間** (通常 2-3 秒) - 查看 Console `[SubtitleService] Whisper 辨識完成`
 3. **OverlapProcessor 處理時間** (應 < 10ms) - 查看 Console `[SubtitleService] OverlapProcessor 處理完成`
 4. **網路連線品質** - 檢查 Network tab
@@ -276,16 +375,24 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
    - TODO: 新增 E2E 測試 (Playwright)
    - 已完成: ✅ OverlapProcessor 100% 覆蓋率 + Demo 頁面 5 個互動測試
 
-3. **ScriptProcessorNode 已過時**
-   - 現象: AudioChunker 使用的 `ScriptProcessorNode` 已被 W3C 標記為 deprecated
-   - 影響: 未來瀏覽器版本可能移除此 API
-   - 建議: 遷移至 AudioWorklet API
-   - 挑戰: Service Worker 對 AudioWorklet 的支援有限
-
-4. **Chrome Automation Mode 限制**
+3. **Chrome Automation Mode 限制**
    - 現象: MCP chrome-devtools 控制的 Chrome 無法載入 Extension
    - 影響: 無法使用自動化工具測試 Extension
    - 解決方案: 使用正常 Chrome 視窗手動測試
+
+4. **🟡 Base64 → Blob 還原流程待優化** (2025-11-11)
+   - **症狀**: Service Worker 的 `createAudioBlob()` 重建 Blob 後，部分 chunk 上傳 Whisper 時出現 `WHISPER_UNSUPPORTED_FORMAT` 錯誤
+   - **影響**: 部分音訊片段無法辨識，字幕可能缺失
+   - **可能原因**:
+     1. Base64 decode 邏輯在某些環境（瀏覽器 vs Node）有差異
+     2. Blob mimeType 未正確傳遞或重建
+     3. FormData 構建時 filename/type 設定錯誤
+   - **診斷方向**:
+     1. 驗證重建的 Blob 能否被瀏覽器播放（用 Audio 元素測試）
+     2. 比對成功 chunk 與失敗 chunk 的 metadata（mimeType, size, duration）
+     3. 檢查 Base64 decode 在不同環境的行為（atob vs Buffer.from）
+     4. 加強 Console log，記錄每個 chunk 的 `hasBase64`, `audioByteLength`, `mimeType`
+   - **臨時方案**: 已加入錯誤處理與診斷資訊，失敗 chunk 會跳過並記錄
 
 ### ✅ 已修復問題
 
@@ -296,6 +403,39 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
    - ✅ **修復**: 根據 `video.currentTime` 動態查找並顯示對應的 segment
    - ✅ **修復**: 支援 play/pause/seek 事件的即時響應
    - ✅ **驗證**: Demo 頁面測試 5 通過,字幕與影片完美同步
+
+2. ~~**Offscreen Document 音訊處理導致瀏覽器凍結**~~ (2025-11-09 至 2025-11-11 完全修復)
+   - ~~**症狀**: 啟用字幕後整個 Chrome 瀏覽器完全凍結,無聲音輸出~~
+   - ~~**錯誤診斷路徑**: 懷疑 Offscreen headless 環境限制、Audio 元素行為、Chrome API bug~~
+
+   - ✅ **根本原因**: ScriptProcessorNode + AudioContext 在 Offscreen Document 中與 tabCapture 組合觸發 Chrome 底層死鎖
+
+   - ✅ **修復方案**（完全重構音訊管線）:
+     1. **移除 ScriptProcessorNode + MP3 編碼管線**（死鎖元兇）
+     2. **改用 MediaRecorder**：直接產生 audio/webm chunk（3 秒 timeslice）
+     3. **Base64 傳輸**：Offscreen 端將 Blob → ArrayBuffer → Base64，避免 MV3 Blob 失真
+     4. **Service Worker 重建**：createAudioBlob() 將 Base64 → Blob → Whisper API
+     5. **音訊輸出**：suppressLocalAudioPlayback: true + Audio 鏡射播放（避免回音）
+
+   - ✅ **移除檔案**:
+     - `src/background/mp3-encoder.js`
+     - `src/workers/mp3-encoder.worker.js`
+     - `lamejs` npm 依賴
+     - manifest.json 的 Web Worker 配置
+
+   - ✅ **驗證**:
+     - 瀏覽器不再凍結
+     - 音訊正常播放
+     - MediaRecorder 穩定產生 chunk
+     - Base64 傳輸成功（部分 Whisper 格式問題待修復，見「待解決問題 #4」）
+
+   - 📚 **關鍵教訓**:
+     - Deprecated API 在非標準環境（Offscreen, Service Worker）可能觸發嚴重問題
+     - 技術債務不只是「未來問題」，可能是**當前危機的根源**
+     - 架構級問題需要**根本解決（替換管線）而非修補症狀**
+     - 文件中的「潛在死鎖」線索應優先與故障關聯
+
+   - 📖 **詳細記錄**: 見 `NewWay.md` 與 `.serena/memories/browser-freeze-debugging-2025-11-09.md`
 
 ### 💡 未來改進方向
 
@@ -336,10 +476,13 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
 - 更新 `popup.js` 支援遮罩顯示與更換 API Key 流程
 - 建置產物大小: popup 5.33 KB (gzip), service-worker 8.75 KB (gzip)
 
-### Phase 1: 基礎辨識功能 ✅ (已完成)
+### Phase 1: 基礎辨識功能 ✅ (已完成，含關鍵架構遷移)
 - ✅ 音訊擷取 (chrome.tabCapture) - `audio-capture.js` (182 lines)
-- ✅ 音訊切塊 (Rolling Window: 3 秒音訊,重疊 1 秒) - `audio-chunker.js` (227 lines)
-- ✅ MP3 編碼 (Web Worker + lamejs) - `mp3-encoder.js` (192 lines) + Worker (124 lines)
+- ✅ ~~音訊切塊 (Rolling Window)~~ → **已移除**（改用 MediaRecorder）
+- ✅ **MediaRecorder 音訊擷取**（關鍵遷移）- `offscreen/offscreen.js` (audio/webm chunk)
+  - 移除 ScriptProcessorNode + MP3 編碼管線（死鎖元兇）
+  - Base64 傳輸避免 MV3 Blob 失真
+  - suppressLocalAudioPlayback + Audio 鏡射播放
 - ✅ Whisper API 整合 - `whisper-client.js` (265 lines)
 - ✅ OverlapProcessor (斷句優化) - `subtitle-processor.js` (418 lines)
 - ✅ 基礎字幕顯示 - `content-script.js` (329 lines) + CSS (96 lines)
@@ -348,11 +491,12 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
 - ✅ 文字相似度計算 - `text-similarity.js` (Levenshtein Distance)
 
 **關鍵成果**:
-- 完整音訊處理管線已建立 (~2,900 lines)
+- 完整 MediaRecorder 管線已建立（修復瀏覽器凍結問題）
 - OverlapProcessor 雙重去重策略 (80% time OR 50% time + 80% text)
 - Content Script 時間同步修復 (支援 play/pause/seek)
 - 測試覆蓋: OverlapProcessor 100%, 整體 Demo 頁面 5 個測試
-- Git 提交: `1aa0cf5` (pipeline) + `051ee78` (time sync)
+- **架構遷移**: ScriptProcessorNode → MediaRecorder（2025-11-09 至 2025-11-11）
+- Git 提交: `1aa0cf5` (pipeline) + `051ee78` (time sync) + `0c7a215` (MediaRecorder 修復)
 
 ### 待開發 (按 Milestone 順序):
 
@@ -374,6 +518,8 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
 - [CLAUDE.md](CLAUDE.md) - Claude 開發指引 (本文件)
 
 ### 開發記錄 (Serena 記憶)
+- **`NewWay.md`** - **MediaRecorder 管線遷移完整記錄**（2025-11-11，瀏覽器凍結修復）
+- `.serena/memories/browser-freeze-debugging-2025-11-09.md` - 瀏覽器凍結問題診斷記錄（已修復）
 - `.serena/memories/phase1-completion-2025-11-09.md` - **Phase 1 完整記錄** (11 個模組詳細規格)
 - `.serena/memories/development-progress-2025-11-08.md` - 詳細開發進度記錄
 - `.serena/memories/project-status-2025-11-08.md` - 專案狀態總覽
@@ -390,9 +536,7 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
 
 **Phase 1 音訊處理管線**:
 - `src/background/audio-capture.js` - 音訊擷取 (chrome.tabCapture)
-- `src/background/audio-chunker.js` - Rolling Window 切塊
-- `src/background/mp3-encoder.js` - MP3 編碼器包裝
-- `src/workers/mp3-encoder.worker.js` - MP3 編碼 Worker (lamejs)
+- `src/offscreen/offscreen.js` - MediaRecorder chunk 產生
 - `src/background/whisper-client.js` - Whisper API 整合
 - `src/background/subtitle-processor.js` - **OverlapProcessor** (核心去重與斷句)
 - `src/lib/language-rules.js` - 多語言斷句規則

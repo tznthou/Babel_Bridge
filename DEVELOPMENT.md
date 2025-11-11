@@ -56,8 +56,7 @@ src/
 ├── background/          # Service Worker 與音訊處理
 │   ├── service-worker.js       # 核心控制器
 │   ├── audio-capture.js        # 音訊擷取
-│   ├── audio-chunker.js        # Rolling Window 切塊
-│   ├── mp3-encoder.js          # MP3 編碼器接口
+│   ├── audio-chunker.js        # Rolling Window 切塊（舊版備援）
 │   └── whisper-client.js       # Whisper API 整合
 ├── content/             # Content Script (注入網頁)
 │   ├── content-script.js       # 字幕渲染邏輯
@@ -71,8 +70,7 @@ src/
 │   ├── error-handler.js        # 錯誤處理器
 │   ├── config.js               # 全域配置
 │   └── api-key-manager.js      # API Key 管理
-└── workers/             # Web Workers
-    └── mp3-encoder.worker.js   # MP3 編碼 Worker
+└── workers/             # Web Workers（保留未來需求）
 ```
 
 ## 常見開發任務

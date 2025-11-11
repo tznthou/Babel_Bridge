@@ -7,7 +7,6 @@ export default defineConfig({
       manifest: './manifest.json',
       watchFilePaths: ['src/**/*', 'icons/**/*'],
       additionalInputs: [
-        'src/workers/mp3-encoder.worker.js',
         'src/offscreen/offscreen.html'
       ],
     }),
