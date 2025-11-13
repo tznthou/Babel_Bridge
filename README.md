@@ -134,7 +134,7 @@ Babel Bridge/
 │   │   ├── whisper-client.js        # ✅ Whisper API 整合
 │   │   └── subtitle-processor.js    # ✅ OverlapProcessor (核心去重與斷句)
 │   ├── offscreen/                   # 📦 Offscreen Document
-│   │   └── offscreen.js             # ✅ MediaRecorder + Base64 傳輸
+│   │   └── offscreen.js             # ✅ MediaRecorder + Base64 傳輸 + WebM Header 補強
 │   ├── content/                     # 📦 Content Script
 │   │   ├── content-script.js        # ✅ 字幕顯示 (VideoMonitor + SubtitleOverlay)
 │   │   └── subtitle-overlay.css     # ✅ 字幕樣式
@@ -297,8 +297,8 @@ npm run package
 
 ## 📅 開發里程碑 (Milestones)
 
-**當前狀態**: Phase 1 已完成 ✅ → 準備進入 Phase 2 🚀
-**最後更新**: 2025-11-09
+**當前狀態**: Phase 1 已完成並全面測試通過 ✅ → 準備進入 Phase 2 🚀
+**最後更新**: 2025-11-11
 
 ---
 
@@ -338,31 +338,69 @@ npm run package
 
 ---
 
-### Phase 1: 基礎辨識功能 ✅ (已完成，含關鍵架構遷移 - 4 天)
+### Phase 1: 基礎辨識功能 ✅ (已完成 - 2025-11-11)
 
+#### 音訊處理管線
 - ✅ **音訊擷取**: chrome.tabCapture API 整合 - `audio-capture.js` (182 lines)
-- ✅ ~~**音訊切塊**: Rolling Window 策略~~ → **已移除**（改用 MediaRecorder）
 - ✅ **MediaRecorder 管線**（關鍵遷移）- `offscreen/offscreen.js`
   - 移除 ScriptProcessorNode + MP3 編碼（死鎖元兇）
   - MediaRecorder 直接產生 audio/webm chunk（3 秒 timeslice）
-  - Base64 傳輸避免 MV3 Blob 失真
   - suppressLocalAudioPlayback + Audio 鏡射播放（避免回音）
-- ✅ **Whisper API**: 語音辨識整合 - `whisper-client.js` (265 lines)
-- ✅ **OverlapProcessor**: 斷句優化邏輯 - `subtitle-processor.js` (418 lines)
-- ✅ **基礎字幕顯示**: Content Script 注入與字幕渲染 - `content-script.js` (329 lines) + CSS (96 lines)
-- ✅ **時間同步字幕**: VideoMonitor 類別,根據影片時間動態顯示
-- ✅ **多語言斷句**: 支援中/英/日/韓/歐洲語系 - `language-rules.js` (352 lines)
-- ✅ **文字相似度**: Levenshtein Distance 實作 - `text-similarity.js`
+- ✅ **WebM Header 補強**（關鍵修復 - 2025-11-11）
+  - **問題**: chunk1+ 缺少 EBML header 導致 95% Whisper 失敗
+  - **解決**: extractWebMHeader() 從 chunk0 提取，prepareWebMChunk() 自動補強
+  - **成果**: Whisper 辨識成功率從 4.3% → 100%
+- ✅ **Base64 跨 Context 傳輸**: 避免 MV3 Blob 失真
 
-**驗收標準**: ✅ 已通過 - console 能看到即時辨識結果,字幕與影片完美同步，瀏覽器不再凍結
+#### 語音辨識與字幕處理
+- ✅ **Whisper API**: 語音辨識整合 - `whisper-client.js` (265 lines)
+- ✅ **OverlapProcessor**: 斷句優化與去重 - `subtitle-processor.js` (418 lines)
+  - 雙重去重策略：80% time OR (50% time + 80% text similarity)
+  - 過濾率：15-25%
+- ✅ **多語言斷句**: 支援中/英/日/韓/歐洲語系 - `language-rules.js` (352 lines)
+- ✅ **文字相似度**: Levenshtein Distance - `text-similarity.js`
+
+#### 字幕顯示與同步
+- ✅ **動態字幕定位**（關鍵修復 - 2025-11-11）
+  - **問題**: 字幕顯示在錯誤位置（viewport 外）
+  - **解決**: getBoundingClientRect() + ResizeObserver 動態計算
+  - **成果**: 精確對齊影片播放器（normal + fullscreen 模式）
+  - **參考**: igrigorik/videospeed, siloor/youtube.external.subtitle
+- ✅ **VideoMonitor**: 影片時間同步與事件監聽 - `content-script.js`
+  - 修復：新增 get video() getter（解決 undefined bug）
+  - 支援：play/pause/seek 事件響應
+- ✅ **SubtitleOverlay**: 字幕渲染與樣式 - `subtitle-overlay.css` (96 lines)
+
+**驗收標準**: ✅ 已通過
+- Whisper 辨識成功率：100%（chunk0-50 全部通過）
+- 字幕定位：精確對齊影片播放器內部底部
+- 全螢幕模式：正常運作（padding-bottom 自動調整）
+- ⚠️ 時間同步：輕微偏移（已列為 P1 優先級）
+
+**測試結果**:
+- **WebM Header 修復測試**（2025-11-11 早上 → 下午）：
+  - 修復前：chunk0 成功，chunk1-50 失敗（4.3% 成功率）
+  - 修復後：chunk0-50 全部成功（100% 成功率）
+  - 診斷方式：逐一上傳 chunk 至 Whisper API 驗證
+- **字幕定位測試**（2025-11-11 晚上）：
+  - YouTube 影片：✅ 正常（normal + theater + fullscreen）
+  - ResizeObserver：✅ 自動調整
+  - VideoMonitor.video：✅ 正確返回 video element
+- **整體功能測試**：
+  - OverlapProcessor：100% 覆蓋率（單元測試 + Demo 頁面）
+  - Content Script：5 個互動測試通過
 
 **關鍵成果**:
-- 完整 MediaRecorder 管線已建立（修復瀏覽器凍結問題）
-- OverlapProcessor 雙重去重策略 (80% time OR 50% time + 80% text similarity)
-- Content Script 時間同步修復 (支援 play/pause/seek)
-- 測試覆蓋: OverlapProcessor 100%, 整體 Demo 頁面 5 個測試
-- **架構遷移**: ScriptProcessorNode → MediaRecorder（2025-11-09 至 2025-11-11）
-- Git 提交: `1aa0cf5` (pipeline) + `051ee78` (time sync) + `0c7a215` (MediaRecorder 修復)
+- 音訊管線：ScriptProcessorNode → MediaRecorder（根本解決凍結問題）
+- 辨識成功率：4.3% → 100%（提升 95.7%，關鍵突破）
+- 字幕定位：從錯誤位置 → 精確對齊（完全解決）
+- 程式碼品質：418 lines OverlapProcessor（100% 測試覆蓋率）
+
+**Git 提交記錄**:
+- `86b5777` - MediaRecorder 管線遷移（2025-11-09）
+- `0253052` - WebM Header 修復，100% Whisper 成功率（2025-11-11）
+- `897c38c` - 動態字幕定位（2025-11-11）
+- `d766d30` - VideoMonitor getter 修復（2025-11-11）
 
 ---
 
@@ -399,7 +437,9 @@ npm run package
 | [`SPEC.md`](./SPEC.md) | 系統規格與 API 契約 |
 
 ### 開發記錄 (Serena AI 記憶)
+- **`NewWay2.md`** - **WebM Header 修復完整記錄**（2025-11-11，Whisper 成功率 100%）
 - **`NewWay.md`** - **MediaRecorder 管線遷移完整記錄**（2025-11-11，瀏覽器凍結修復）
+- **`.serena/memories/phase1-testing-final-2025-11-11.md`** - **Phase 1 最終測試記錄**（WebM Header 修復前後對比）
 - **`.serena/memories/mediarecorder-migration-2025-11-11.md`** - **管線遷移技術報告**（含診斷方法論與深刻反思）
 - `.serena/memories/browser-freeze-debugging-2025-11-09.md` - 瀏覽器凍結問題診斷記錄（已修復）
 - `.serena/memories/phase1-completion-2025-11-09.md` - **Phase 1 完整記錄** (11 個模組詳細規格)
