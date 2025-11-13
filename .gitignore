@@ -32,6 +32,11 @@ coverage/
 *.tmp
 .cache/
 
+# Development notes & test scripts
+NewWay*.md
+diagnostic-script.js
+test-message.js
+
 # AI Assistant memories
 .serena/
 
