@@ -98,6 +98,13 @@ class VideoMonitor {
   }
 
   /**
+   * 取得 video 元素（getter）
+   */
+  get video() {
+    return this.videoElement;
+  }
+
+  /**
    * 取得當前播放時間
    */
   getCurrentTime() {
@@ -364,11 +371,39 @@ class SubtitleOverlay {
    */
   setupPositioning() {
     const video = this.videoMonitor.video;
+
     if (!video) {
-      console.warn('[ContentScript] 無法找到 video 元素，跳過定位設定');
+      console.warn('[ContentScript] 無法找到 video 元素，1 秒後重試...');
+      setTimeout(() => this.setupPositioning(), 1000);
       return;
     }
 
+    console.log('[ContentScript] 找到 video 元素，readyState:', video.readyState);
+
+    // 等待 video metadata 載入完成
+    if (video.readyState < 2) {
+      console.log('[ContentScript] 等待 video loadedmetadata 事件...');
+      video.addEventListener('loadedmetadata', () => {
+        console.log('[ContentScript] loadedmetadata 觸發，開始定位');
+        this.initPositioning(video);
+      }, { once: true });
+
+      // 備用：5 秒超時後強制執行
+      setTimeout(() => {
+        if (!this.resizeObserver) {
+          console.warn('[ContentScript] loadedmetadata 超時，強制開始定位');
+          this.initPositioning(video);
+        }
+      }, 5000);
+    } else {
+      this.initPositioning(video);
+    }
+  }
+
+  /**
+   * 初始化定位監聽器
+   */
+  initPositioning(video) {
     // ResizeObserver 監聽影片尺寸變化
     this.resizeObserver = new ResizeObserver(() => {
       this.updatePosition();
@@ -383,7 +418,7 @@ class SubtitleOverlay {
     // 初始定位
     this.updatePosition();
 
-    console.log('[ContentScript] 動態定位已設定');
+    console.log('[ContentScript] ✅ 動態定位已設定');
   }
 
   /**
@@ -391,15 +426,33 @@ class SubtitleOverlay {
    */
   updatePosition() {
     const video = this.videoMonitor.video;
-    if (!video) return;
+    if (!video) {
+      console.warn('[ContentScript] updatePosition: 無 video 元素');
+      return;
+    }
 
     const rect = video.getBoundingClientRect();
+
+    // 🔍 診斷資訊
+    console.log('[ContentScript] 🎯 影片位置診斷', {
+      video標籤: video.tagName,
+      video類別: video.className,
+      rectLeft: rect.left,
+      rectTop: rect.top,
+      rectWidth: rect.width,
+      rectHeight: rect.height,
+      視窗寬度: window.innerWidth,
+      視窗高度: window.innerHeight,
+      videoReadyState: video.readyState
+    });
 
     // 動態計算 overlay 位置（精確對齊影片）
     this.container.style.left = `${rect.left}px`;
     this.container.style.top = `${rect.top}px`;
     this.container.style.width = `${rect.width}px`;
     this.container.style.height = `${rect.height}px`;
+
+    console.log('[ContentScript] ✅ Overlay 位置已更新');
   }
 
   /**
