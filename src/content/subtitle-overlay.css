@@ -3,21 +3,22 @@
  */
 
 .babel-subtitle-container {
-  /* 定位 */
+  /* 定位 - 座標由 JS 動態計算 */
   position: fixed;
-  bottom: 50px;
-  left: 0;
-  right: 0;
   z-index: 2147483647; /* 最大 z-index 確保在最上層 */
 
-  /* 佈局 */
+  /* 佈局 - 改用 flex 對齊底部 */
   display: none; /* 預設隱藏 */
-  justify-content: center;
+  flex-direction: column;
   align-items: center;
+  justify-content: flex-end; /* 對齊底部 */
+  padding-bottom: 60px; /* 字幕距離底部距離 */
   pointer-events: none; /* 不干擾頁面互動 */
+}
 
-  /* 動畫 */
-  transition: opacity 0.2s ease-in-out;
+/* 全螢幕模式 */
+.babel-subtitle-container.fullscreen {
+  padding-bottom: 80px; /* 全螢幕時調整間距 */
 }
 
 .babel-subtitle {

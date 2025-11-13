@@ -69,6 +69,41 @@ flowchart TB
 
 ---
 
+## 🎯 字幕定位技術 (Subtitle Positioning)
+
+### 動態定位策略
+
+Babel Bridge 使用動態計算方式精確對齊影片播放器，確保字幕顯示在正確位置。
+
+**核心實作**：
+- `ResizeObserver` 監聽影片尺寸變化
+- `getBoundingClientRect()` 動態計算影片位置
+- 支援全螢幕模式（fullscreen/webkitfullscreen/mozfullscreen）
+- 適用於所有影片網站（YouTube、Netflix、Vimeo 等）
+
+**參考專案**：
+- [igrigorik/videospeed](https://github.com/igrigorik/videospeed) - MIT License（定位邏輯參考）
+- [siloor/youtube.external.subtitle](https://github.com/siloor/youtube.external.subtitle) - MIT License（全螢幕處理參考）
+
+**技術選擇**：
+- `position: fixed` + 動態座標（而非 absolute + 注入容器）
+- 優勢：低風險、高相容性、不受網站 CSS 影響
+- 自動適應：影片 resize、theater mode、fullscreen
+
+**實作細節**：
+```javascript
+// SubtitleOverlay.updatePosition()
+const rect = video.getBoundingClientRect();
+this.container.style.left = `${rect.left}px`;
+this.container.style.top = `${rect.top}px`;
+this.container.style.width = `${rect.width}px`;
+this.container.style.height = `${rect.height}px`;
+```
+
+詳見 [src/content/content-script.js](src/content/content-script.js) 的 `SubtitleOverlay.setupPositioning()`
+
+---
+
 ## 🧰 技術棧 (Tech Stack)
 
 | 類別 | 技術 | 備註 |

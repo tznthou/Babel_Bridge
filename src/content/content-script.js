@@ -167,6 +167,9 @@ class SubtitleOverlay {
     this.videoMonitor = new VideoMonitor(this.handleTimeUpdate.bind(this));
 
     console.log('[ContentScript] Subtitle overlay 已初始化');
+
+    // 設定動態定位
+    this.setupPositioning();
   }
 
   /**
@@ -354,6 +357,60 @@ class SubtitleOverlay {
     this.segments = [];
     this.currentSegmentIndex = -1;
     this.baseVideoTime = null;
+  }
+
+  /**
+   * 設定動態定位 - 監聽影片尺寸與全螢幕變化
+   */
+  setupPositioning() {
+    const video = this.videoMonitor.video;
+    if (!video) {
+      console.warn('[ContentScript] 無法找到 video 元素，跳過定位設定');
+      return;
+    }
+
+    // ResizeObserver 監聽影片尺寸變化
+    this.resizeObserver = new ResizeObserver(() => {
+      this.updatePosition();
+    });
+    this.resizeObserver.observe(video);
+
+    // Fullscreen 監聽（支援不同瀏覽器前綴）
+    ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange'].forEach(event => {
+      document.addEventListener(event, () => this.handleFullscreen());
+    });
+
+    // 初始定位
+    this.updatePosition();
+
+    console.log('[ContentScript] 動態定位已設定');
+  }
+
+  /**
+   * 更新 Overlay 位置 - 精確對齊影片播放器
+   */
+  updatePosition() {
+    const video = this.videoMonitor.video;
+    if (!video) return;
+
+    const rect = video.getBoundingClientRect();
+
+    // 動態計算 overlay 位置（精確對齊影片）
+    this.container.style.left = `${rect.left}px`;
+    this.container.style.top = `${rect.top}px`;
+    this.container.style.width = `${rect.width}px`;
+    this.container.style.height = `${rect.height}px`;
+  }
+
+  /**
+   * 處理全螢幕模式切換
+   */
+  handleFullscreen() {
+    const isFullscreen = !!document.fullscreenElement;
+    this.container.classList.toggle('fullscreen', isFullscreen);
+    this.updatePosition();
+
+    console.log('[ContentScript] 全螢幕模式:', isFullscreen);
   }
 }
 
