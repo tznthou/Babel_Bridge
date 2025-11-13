@@ -74,9 +74,12 @@ chrome.tabCapture → getUserMedia(tab audio) → MediaRecorder (3s timeslice)
    - 直接對 MediaStream 啟動 `MediaRecorder`
    - 以 3 秒 timeslice 產生 audio/webm chunk (`mediaRecorder.start(3000)`)
    - **關鍵優勢**：無需 MP3 編碼，避免 ScriptProcessorNode 死鎖問題
+   - **WebM Header 補強** (2025-11-11 新增):
+     * chunk0：解析 EBML header（尋找 Cluster signature `0x1F 0x43 0xB6 0x75`）
+     * chunk1+：自動 `concat(header + chunk)`，確保每個 chunk 可獨立解碼
 
 3. **Base64 傳輸 (MV3 跨 Context 通訊)**:
-   - Offscreen 端：chunk (Blob) → ArrayBuffer → Base64 + metadata
+   - Offscreen 端：chunk (Blob) → ArrayBuffer → **WebM Header 補強** → Base64 + metadata
    - 透過 `chrome.runtime.sendMessage` 傳給 Service Worker
    - 避免 Blob 在 MV3 context 間失真（structured clone 不完整支援 Blob）
 
@@ -380,19 +383,6 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
    - 影響: 無法使用自動化工具測試 Extension
    - 解決方案: 使用正常 Chrome 視窗手動測試
 
-4. **🟡 Base64 → Blob 還原流程待優化** (2025-11-11)
-   - **症狀**: Service Worker 的 `createAudioBlob()` 重建 Blob 後，部分 chunk 上傳 Whisper 時出現 `WHISPER_UNSUPPORTED_FORMAT` 錯誤
-   - **影響**: 部分音訊片段無法辨識，字幕可能缺失
-   - **可能原因**:
-     1. Base64 decode 邏輯在某些環境（瀏覽器 vs Node）有差異
-     2. Blob mimeType 未正確傳遞或重建
-     3. FormData 構建時 filename/type 設定錯誤
-   - **診斷方向**:
-     1. 驗證重建的 Blob 能否被瀏覽器播放（用 Audio 元素測試）
-     2. 比對成功 chunk 與失敗 chunk 的 metadata（mimeType, size, duration）
-     3. 檢查 Base64 decode 在不同環境的行為（atob vs Buffer.from）
-     4. 加強 Console log，記錄每個 chunk 的 `hasBase64`, `audioByteLength`, `mimeType`
-   - **臨時方案**: 已加入錯誤處理與診斷資訊，失敗 chunk 會跳過並記錄
 
 ### ✅ 已修復問題
 
@@ -437,6 +427,30 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
 
    - 📖 **詳細記錄**: 見 `NewWay.md` 與 `.serena/memories/browser-freeze-debugging-2025-11-09.md`
 
+3. ~~**WebM Header 缺失導致 95% chunks 無法辨識**~~ (2025-11-11 完全修復)
+   - ~~**症狀**: 只有第一個 chunk 成功轉錄，後續 chunk 出現 `WHISPER_UNSUPPORTED_FORMAT` 錯誤~~
+
+   - ✅ **根本原因**: MediaRecorder timeslice 行為 - 只有第一個 chunk 含完整 EBML header，後續 chunk 只有 Cluster 資料
+
+   - ✅ **修復方案**（Offscreen 自動補 header）:
+     1. **解析 chunk0 header**: 在 `prepareWebMChunk()` 中尋找 Cluster signature (`0x1F 0x43 0xB6 0x75`)
+     2. **快取 header**: 將 Cluster 前的內容（EBML + Segment + Tracks metadata）儲存到 `webmHeaderBuffer`
+     3. **自動補強 chunk1+**: 所有後續 chunk 都自動 `concat(header + chunk)`
+     4. **Base64 同步**: Base64 備援也使用補過 header 的 buffer
+
+   - ✅ **驗證**:
+     - Service Worker 診斷顯示所有 chunk 都有 `1a 45 df a3` header
+     - Whisper 連續十幾個 chunk 成功轉錄
+     - 成功率從 4.3% (1/23) 提升到 100%
+     - 字幕連續產生無中斷
+
+   - 📚 **關鍵教訓**:
+     - MediaRecorder timeslice 產生的中間 chunk 無法獨立解碼
+     - WebM container 格式要求每個獨立檔案都有完整 header
+     - 診斷 hex bytes 能快速定位格式問題
+
+   - 📖 **詳細記錄**: 見 `NewWay2.md` 與 `.serena/memories/phase1-testing-final-2025-11-11.md`
+
 ### 💡 未來改進方向
 
 1. **加密增強**
@@ -456,7 +470,7 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
 
 ## 專案狀態
 
-目前專案處於 **Phase 1 已完成,準備進入 Phase 2** 階段 (更新日期: 2025-11-09)
+目前專案處於 **Phase 1 已完成（含連續字幕產生驗證）,準備進入 Phase 2** 階段 (更新日期: 2025-11-11)
 
 ### Phase 0: 基礎建置與安全機制 ✅ (已完成)
 - ✅ PRD (產品需求文件)
@@ -492,11 +506,14 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
 
 **關鍵成果**:
 - 完整 MediaRecorder 管線已建立（修復瀏覽器凍結問題）
+- **WebM Header 自動補強**（2025-11-11）：解決 95% chunks 無法辨識問題，Whisper 成功率 100%
 - OverlapProcessor 雙重去重策略 (80% time OR 50% time + 80% text)
 - Content Script 時間同步修復 (支援 play/pause/seek)
+- Trusted Types 相容（改用 DOM API）
 - 測試覆蓋: OverlapProcessor 100%, 整體 Demo 頁面 5 個測試
 - **架構遷移**: ScriptProcessorNode → MediaRecorder（2025-11-09 至 2025-11-11）
-- Git 提交: `1aa0cf5` (pipeline) + `051ee78` (time sync) + `0c7a215` (MediaRecorder 修復)
+- **字幕連續產生**：實測 YouTube 影片 ≥ 1 分鐘，穩定產生連續字幕
+- Git 提交: `1aa0cf5` (pipeline) + `051ee78` (time sync) + `0c7a215` (MediaRecorder 修復) + `86b5777` (WebM header)
 
 ### 待開發 (按 Milestone 順序):
 

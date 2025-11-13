@@ -147,6 +147,7 @@ class SubtitleOverlay {
     this.segments = []; // 儲存所有接收到的 segments
     this.currentSegmentIndex = -1; // 當前顯示的 segment 索引
     this.videoMonitor = null;
+    this.baseVideoTime = null; // 記錄第一個 chunk 時的影片時間
     this.init();
   }
 
@@ -184,8 +185,26 @@ class SubtitleOverlay {
       endTime: data.endTime
     });
 
-    // 將新的 segments 加入儲存
-    this.segments.push(...data.segments);
+    // 第一次收到字幕資料時，記錄基準時間
+    if (this.baseVideoTime === null) {
+      this.baseVideoTime = this.videoMonitor.getCurrentTime();
+      console.log('[ContentScript] 🎯 設定基準時間:', this.baseVideoTime.toFixed(2), 's');
+    }
+
+    // 調整 segments 的時間戳為影片絕對時間
+    const adjustedSegments = data.segments.map(segment => ({
+      ...segment,
+      start: this.baseVideoTime + segment.start,
+      end: this.baseVideoTime + segment.end,
+    }));
+
+    console.log('[ContentScript] 調整後的 segments 時間範圍:', {
+      first: adjustedSegments[0] ? `${adjustedSegments[0].start.toFixed(2)}s - ${adjustedSegments[0].end.toFixed(2)}s` : 'N/A',
+      last: adjustedSegments[adjustedSegments.length - 1] ? `${adjustedSegments[adjustedSegments.length - 1].start.toFixed(2)}s - ${adjustedSegments[adjustedSegments.length - 1].end.toFixed(2)}s` : 'N/A'
+    });
+
+    // 將調整後的 segments 加入儲存
+    this.segments.push(...adjustedSegments);
 
     // 依照時間排序
     this.segments.sort((a, b) => a.start - b.start);
@@ -247,8 +266,10 @@ class SubtitleOverlay {
    * 顯示字幕
    */
   show(segment) {
-    // 清空容器
-    this.container.innerHTML = '';
+    // 清空容器 (使用 DOM API，避免 Trusted Types 錯誤)
+    while (this.container.firstChild) {
+      this.container.removeChild(this.container.firstChild);
+    }
 
     // 建立字幕元素
     const subtitleEl = document.createElement('div');
@@ -306,9 +327,13 @@ class SubtitleOverlay {
    * 清除所有字幕
    */
   clear() {
-    this.container.innerHTML = '';
+    // 清空容器 (使用 DOM API，避免 Trusted Types 錯誤)
+    while (this.container.firstChild) {
+      this.container.removeChild(this.container.firstChild);
+    }
     this.segments = [];
     this.currentSegmentIndex = -1;
+    this.baseVideoTime = null; // 重置基準時間
     console.log('[ContentScript] 已清除所有字幕');
   }
 
@@ -328,6 +353,7 @@ class SubtitleOverlay {
     this.container = null;
     this.segments = [];
     this.currentSegmentIndex = -1;
+    this.baseVideoTime = null;
   }
 }
 

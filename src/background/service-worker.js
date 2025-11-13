@@ -29,6 +29,8 @@ class SubtitleService {
 
     this.isActive = false;
     this.currentTabId = null;
+    this.bufferShapeLogged = false;
+    this.diagnosticCount = 0;
 
     console.log('[SubtitleService] Service Worker 已啟動');
   }
@@ -117,13 +119,26 @@ class SubtitleService {
         endTime: endTime.toFixed(2),
         size: `${(size / 1024).toFixed(2)} KB`,
         mimeType: mimeType || 'unknown',
+        hasAudioBuffer: audioBuffer instanceof ArrayBuffer,
         hasBase64: Boolean(audioBase64),
       });
+
+      if (!this.bufferShapeLogged) {
+        this.bufferShapeLogged = true;
+        this.logBufferShape(audioBuffer);
+      }
 
       const audioBlob = await this.createAudioBlob({
         audioBuffer,
         audioBase64,
         blob,
+        mimeType,
+      });
+
+      await this.logChunkDiagnostics({
+        chunkIndex,
+        audioBlob,
+        audioBase64,
         mimeType,
       });
 
@@ -183,32 +198,51 @@ class SubtitleService {
   async createAudioBlob({ audioBuffer, audioBase64, blob, mimeType }) {
     const type = mimeType || blob?.type || 'audio/webm';
 
-    if (audioBase64) {
-      return this.blobFromBase64(audioBase64, type);
-    }
+    const bufferToBlob = (buffer) => new Blob([buffer], { type });
 
     if (audioBuffer instanceof ArrayBuffer) {
-      return new Blob([audioBuffer], { type });
+      return bufferToBlob(audioBuffer);
     }
 
-    if (audioBuffer && audioBuffer.buffer instanceof ArrayBuffer) {
-      return new Blob([audioBuffer.buffer], { type });
+    if (
+      audioBuffer &&
+      typeof ArrayBuffer !== 'undefined' &&
+      typeof ArrayBuffer.isView === 'function' &&
+      ArrayBuffer.isView(audioBuffer) &&
+      audioBuffer.buffer instanceof ArrayBuffer
+    ) {
+      const view = audioBuffer;
+      const slice = (view.byteOffset === 0 && view.byteLength === view.buffer.byteLength)
+        ? view.buffer
+        : view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+      return bufferToBlob(slice);
     }
 
     if (blob instanceof Blob) {
       return blob;
     }
 
+    if (audioBuffer && typeof audioBuffer === 'object') {
+      const extractedFromAudioBuffer = this.extractStructuredClone(audioBuffer);
+      if (extractedFromAudioBuffer) {
+        return bufferToBlob(extractedFromAudioBuffer);
+      }
+    }
+
     if (blob && typeof blob === 'object') {
       if (typeof blob.arrayBuffer === 'function') {
         const buffer = await blob.arrayBuffer();
-        return new Blob([buffer], { type });
+        return bufferToBlob(buffer);
       }
 
-      const reconstructed = this.extractArrayBuffer(blob);
+      const reconstructed = this.extractStructuredClone(blob);
       if (reconstructed) {
-        return new Blob([reconstructed], { type });
+        return bufferToBlob(reconstructed);
       }
+    }
+
+    if (audioBase64) {
+      return this.blobFromBase64(audioBase64, type);
     }
 
     throw new BabelBridgeError(
@@ -216,27 +250,91 @@ class SubtitleService {
       'Invalid audio data received from Offscreen Document',
       {
         hasAudioBuffer: Boolean(audioBuffer),
+        hasBase64: Boolean(audioBase64),
         blobKeys: blob ? Object.keys(blob) : [],
       }
     );
   }
 
-  extractArrayBuffer(blobLike) {
-    if (blobLike.data instanceof ArrayBuffer) {
-      return blobLike.data;
+  logBufferShape(buffer) {
+    console.log('[SubtitleService] audioBuffer 結構偵測', {
+      exists: Boolean(buffer),
+      type: buffer ? typeof buffer : 'undefined',
+      constructor: buffer?.constructor?.name || 'N/A',
+      toString: buffer ? Object.prototype.toString.call(buffer) : 'N/A',
+      byteLength: buffer?.byteLength ?? 'N/A',
+      keys: buffer ? Object.keys(buffer) : [],
+      ownProps: buffer ? Object.getOwnPropertyNames(buffer) : [],
+      isView: buffer ? ArrayBuffer.isView(buffer) : false,
+    });
+  }
+
+  async logChunkDiagnostics({ chunkIndex, audioBlob, audioBase64, mimeType }) {
+    if (!audioBlob) {
+      console.warn('[SubtitleService] chunk diagnostics 無 audioBlob', { chunkIndex });
+      return;
+    }
+
+    // 避免刷屏：預設只記錄前 10 個 chunk，如需更多可調整上限
+    if (this.diagnosticCount >= 10) {
+      return;
+    }
+    this.diagnosticCount += 1;
+
+    let headerHex = 'N/A';
+    let headerAscii = 'N/A';
+    try {
+      const headerBuffer = await audioBlob.slice(0, 8).arrayBuffer();
+      const headerBytes = Array.from(new Uint8Array(headerBuffer));
+      headerHex = headerBytes.map((b) => b.toString(16).padStart(2, '0')).join(' ');
+      headerAscii = headerBytes
+        .map((b) => (b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : '.'))
+        .join('');
+    } catch (error) {
+      headerHex = `error: ${error.message}`;
+      headerAscii = 'error';
+    }
+
+    const base64Preview = audioBase64 ? audioBase64.slice(0, 24) : 'N/A';
+
+    console.log('[SubtitleService] chunk diagnostics', {
+      chunkIndex,
+      mimeType: mimeType || audioBlob.type,
+      blobSize: audioBlob.size,
+      headerHex,
+      headerAscii,
+      base64Preview,
+    });
+  }
+
+  extractStructuredClone(obj) {
+    if (!obj) {
+      return null;
+    }
+
+    if (obj instanceof ArrayBuffer) {
+      return obj;
+    }
+
+    if (obj.data instanceof ArrayBuffer) {
+      return obj.data;
     }
 
     if (
-      blobLike.data &&
-      typeof blobLike.data === 'object' &&
-      blobLike.data.type === 'Buffer' &&
-      Array.isArray(blobLike.data.data)
+      obj.data &&
+      typeof obj.data === 'object' &&
+      obj.data.type === 'Buffer' &&
+      Array.isArray(obj.data.data)
     ) {
-      return Uint8Array.from(blobLike.data.data).buffer;
+      return Uint8Array.from(obj.data.data).buffer;
     }
 
-    if (Array.isArray(blobLike.data)) {
-      const buffers = blobLike.data
+    if (obj.buffer instanceof ArrayBuffer) {
+      return obj.buffer;
+    }
+
+    if (Array.isArray(obj.data)) {
+      const buffers = obj.data
         .map((part) => {
           if (part instanceof ArrayBuffer) {
             return part;
@@ -274,6 +372,16 @@ class SubtitleService {
       return merged.buffer;
     }
 
+    const maybeTypedArray = obj;
+    if (
+      typeof ArrayBuffer !== 'undefined' &&
+      typeof ArrayBuffer.isView === 'function' &&
+      ArrayBuffer.isView(maybeTypedArray) &&
+      maybeTypedArray.buffer instanceof ArrayBuffer
+    ) {
+      return maybeTypedArray.buffer;
+    }
+
     return null;
   }
 
@@ -309,17 +417,31 @@ class SubtitleService {
    */
   async sendSubtitleToContent(subtitle) {
     if (!this.currentTabId) {
+      console.warn('[SubtitleService] 無法發送字幕: currentTabId 為空');
       return;
     }
 
     try {
+      console.log('[SubtitleService] 📤 發送字幕到 Content Script', {
+        tabId: this.currentTabId,
+        segments: subtitle.segments.length,
+        text: subtitle.text.substring(0, 50) + '...'
+      });
+
       await chrome.tabs.sendMessage(this.currentTabId, {
         type: MessageTypes.SUBTITLE_UPDATE,
         data: subtitle,
         timestamp: Date.now(),
       });
+
+      console.log('[SubtitleService] ✅ 字幕發送成功');
     } catch (error) {
-      console.error('[SubtitleService] 發送字幕失敗:', error);
+      console.error('[SubtitleService] ❌ 發送字幕失敗:', error);
+      console.error('[SubtitleService] 錯誤詳情:', {
+        message: error.message,
+        stack: error.stack,
+        tabId: this.currentTabId
+      });
     }
   }
 

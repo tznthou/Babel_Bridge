@@ -20,9 +20,14 @@ let captureStartMs = 0;
 let lastChunkTimestampMs = 0;
 let accumulatedDuration = 0;
 let activeMimeType = 'audio/webm;codecs=opus';
+let webmHeaderBuffer = null;
 
 const CHUNK_CONFIG = {
   CHUNK_DURATION: 3, // 3 秒 timeslice
+};
+
+const TRANSPORT_OPTIONS = {
+  includeBase64Fallback: true, // 目前仍啟用 Base64 作為備援，確保 SW 可解碼
 };
 
 const RECORDER_PREFERENCES = [
@@ -121,6 +126,7 @@ function resetRecorderState() {
   captureStartMs = performance.now();
   lastChunkTimestampMs = captureStartMs;
   accumulatedDuration = 0;
+  webmHeaderBuffer = null;
 }
 
 function wireRecorderEvents(tabId) {
@@ -165,19 +171,23 @@ function wireRecorderEvents(tabId) {
 
     event.data.arrayBuffer()
       .then((arrayBuffer) => {
-        const base64Audio = arrayBufferToBase64(arrayBuffer);
+        const processedBuffer = prepareWebMChunk(arrayBuffer, currentChunkIndex);
 
         const payload = {
           chunkIndex: currentChunkIndex,
           startTime,
           endTime,
-          audioBase64: base64Audio,
-          audioByteLength: arrayBuffer.byteLength,
+          audioBuffer: processedBuffer,
+          audioByteLength: processedBuffer.byteLength,
           size: blobSize,
           duration: durationSeconds,
           mimeType,
           tabId,
         };
+
+        if (TRANSPORT_OPTIONS.includeBase64Fallback) {
+          payload.audioBase64 = arrayBufferToBase64(processedBuffer);
+        }
 
         const sendPromise = chrome.runtime.sendMessage({
           type: 'AUDIO_CHUNK_READY',
@@ -207,6 +217,59 @@ function arrayBufferToBase64(buffer) {
   }
 
   return btoa(binary);
+}
+
+function prepareWebMChunk(buffer, index) {
+  if (index === 0) {
+    if (!webmHeaderBuffer) {
+      const header = extractWebMHeader(buffer);
+      if (header) {
+        webmHeaderBuffer = header;
+        console.log('[Offscreen] 📎 WebM header captured', {
+          headerBytes: webmHeaderBuffer.byteLength,
+        });
+      } else {
+        console.warn('[Offscreen] ⚠️ 無法在第一個 chunk 找到 WebM header');
+      }
+    }
+    return buffer;
+  }
+
+  if (!webmHeaderBuffer) {
+    console.warn('[Offscreen] ⚠️ 尚未取得 WebM header，直接傳送原始 chunk');
+    return buffer;
+  }
+
+  return concatArrayBuffers(webmHeaderBuffer, buffer);
+}
+
+function extractWebMHeader(buffer) {
+  const signature = [0x1f, 0x43, 0xb6, 0x75];
+  const bytes = new Uint8Array(buffer);
+
+  for (let i = 0; i <= bytes.length - signature.length; i++) {
+    let match = true;
+    for (let j = 0; j < signature.length; j++) {
+      if (bytes[i + j] !== signature[j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      return buffer.slice(0, i);
+    }
+  }
+
+  return null;
+}
+
+function concatArrayBuffers(headerBuffer, chunkBuffer) {
+  const header = new Uint8Array(headerBuffer);
+  const chunk = new Uint8Array(chunkBuffer);
+  const combined = new Uint8Array(header.byteLength + chunk.byteLength);
+  combined.set(header, 0);
+  combined.set(chunk, header.byteLength);
+  return combined.buffer;
 }
 
 /**
