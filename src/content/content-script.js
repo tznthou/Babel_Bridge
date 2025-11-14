@@ -151,10 +151,9 @@ class VideoMonitor {
 class SubtitleOverlay {
   constructor() {
     this.container = null;
-    this.segments = []; // 儲存所有接收到的 segments
+    this.segments = []; // 儲存所有接收到的 segments（已是影片絕對時間）
     this.currentSegmentIndex = -1; // 當前顯示的 segment 索引
     this.videoMonitor = null;
-    this.baseVideoTime = null; // 記錄第一個 chunk 時的影片時間
     this.init();
   }
 
@@ -188,43 +187,36 @@ class SubtitleOverlay {
       return;
     }
 
-    console.log('[ContentScript] 接收字幕資料:', {
+    const currentVideoTime = this.videoMonitor.getCurrentTime();
+
+    console.log('[ContentScript] 📺 接收字幕資料:', {
       chunkIndex: data.chunkIndex,
       segments: data.segments.length,
-      startTime: data.startTime,
-      endTime: data.endTime
+      videoStartTime: data.videoStartTime?.toFixed(2),
+      audioTime: data.audioStartTime ? `${data.audioStartTime.toFixed(2)}s - ${data.audioEndTime.toFixed(2)}s` : 'N/A',
+      currentVideoTime: currentVideoTime.toFixed(2),
     });
 
-    // 第一次收到字幕資料時，記錄基準時間
-    if (this.baseVideoTime === null) {
-      this.baseVideoTime = this.videoMonitor.getCurrentTime();
-      console.log('[ContentScript] 🎯 設定基準時間:', this.baseVideoTime.toFixed(2), 's');
-    }
+    // segments 已是影片絕對時間，無需調整（關鍵修復）
+    const segments = data.segments;
 
-    // 調整 segments 的時間戳為影片絕對時間
-    const adjustedSegments = data.segments.map(segment => ({
-      ...segment,
-      start: this.baseVideoTime + segment.start,
-      end: this.baseVideoTime + segment.end,
-    }));
-
-    console.log('[ContentScript] 調整後的 segments 時間範圍:', {
-      first: adjustedSegments[0] ? `${adjustedSegments[0].start.toFixed(2)}s - ${adjustedSegments[0].end.toFixed(2)}s` : 'N/A',
-      last: adjustedSegments[adjustedSegments.length - 1] ? `${adjustedSegments[adjustedSegments.length - 1].start.toFixed(2)}s - ${adjustedSegments[adjustedSegments.length - 1].end.toFixed(2)}s` : 'N/A'
+    console.log('[ContentScript] 📊 Segments 時間範圍:', {
+      first: segments[0] ? `${segments[0].start.toFixed(2)}s - ${segments[0].end.toFixed(2)}s` : 'N/A',
+      last: segments[segments.length - 1] ? `${segments[segments.length - 1].start.toFixed(2)}s - ${segments[segments.length - 1].end.toFixed(2)}s` : 'N/A',
+      text: segments[0]?.text || 'N/A',
     });
 
-    // 將調整後的 segments 加入儲存
-    this.segments.push(...adjustedSegments);
+    // 將 segments 加入儲存
+    this.segments.push(...segments);
 
     // 依照時間排序
     this.segments.sort((a, b) => a.start - b.start);
 
-    console.log('[ContentScript] 目前總共有', this.segments.length, '個 segments');
+    console.log('[ContentScript] ✅ 目前總共有', this.segments.length, '個 segments');
 
     // 立即更新顯示
-    const currentTime = this.videoMonitor.getCurrentTime();
-    this.pruneOldSegments(currentTime);
-    this.updateDisplay(currentTime);
+    this.pruneOldSegments(currentVideoTime);
+    this.updateDisplay(currentVideoTime);
   }
 
   /**
@@ -343,7 +335,6 @@ class SubtitleOverlay {
     }
     this.segments = [];
     this.currentSegmentIndex = -1;
-    this.baseVideoTime = null; // 重置基準時間
     console.log('[ContentScript] 已清除所有字幕');
   }
 
@@ -363,7 +354,6 @@ class SubtitleOverlay {
     this.container = null;
     this.segments = [];
     this.currentSegmentIndex = -1;
-    this.baseVideoTime = null;
   }
 
   /**
@@ -493,6 +483,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case MessageTypes.STYLE_UPDATE:
       // TODO: 更新字幕樣式
       sendResponse({ success: true });
+      break;
+
+    case 'GET_VIDEO_CURRENT_TIME':
+      // 回傳影片當前時間給 Background Service Worker
+      const currentTime = overlay.videoMonitor.getCurrentTime();
+      console.log('[ContentScript] 回報影片時間:', currentTime.toFixed(2), 's');
+      sendResponse({ success: true, currentTime });
       break;
 
     default:

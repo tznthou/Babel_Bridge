@@ -54,16 +54,22 @@ export class AudioCapture {
 
       console.log(`[AudioCapture] 已取得 streamId: ${streamId}`);
 
-      // Step 3: 請求 Offscreen Document 開始音訊擷取
+      // Step 3: 向 Content Script 查詢影片當前時間
+      console.log('[AudioCapture] 查詢影片當前時間...');
+      const videoStartTime = await this.getVideoCurrentTime(tabId);
+      console.log(`[AudioCapture] 影片當前時間: ${videoStartTime.toFixed(2)}s`);
+
+      // Step 4: 請求 Offscreen Document 開始音訊擷取
       console.log('[AudioCapture] ========================================');
       console.log('[AudioCapture] 發送訊息給 Offscreen Document');
       console.log('[AudioCapture] 訊息類型: OFFSCREEN_START_AUDIO_CAPTURE');
+      console.log('[AudioCapture] 影片起始時間:', videoStartTime);
       console.log('[AudioCapture] ========================================');
 
       try {
         const response = await chrome.runtime.sendMessage({
           type: 'OFFSCREEN_START_AUDIO_CAPTURE',
-          data: { streamId, tabId },
+          data: { streamId, tabId, videoStartTime },
         });
 
         console.log('[AudioCapture] 🔍 收到 Offscreen Document 的回應');
@@ -128,6 +134,31 @@ export class AudioCapture {
       console.error('[AudioCapture] 停止音訊擷取失敗:', error);
     } finally {
       this.cleanup();
+    }
+  }
+
+  /**
+   * 向 Content Script 查詢影片當前時間
+   * @param {number} tabId - Chrome tab ID
+   * @returns {Promise<number>} 影片當前時間（秒）
+   * @private
+   */
+  async getVideoCurrentTime(tabId) {
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, {
+        type: 'GET_VIDEO_CURRENT_TIME',
+      });
+
+      if (response && typeof response.currentTime === 'number') {
+        return response.currentTime;
+      }
+
+      // 如果無法取得影片時間，返回 0（從頭開始）
+      console.warn('[AudioCapture] 無法取得影片時間，使用預設值 0');
+      return 0;
+    } catch (error) {
+      console.error('[AudioCapture] 查詢影片時間失敗:', error);
+      return 0;
     }
   }
 

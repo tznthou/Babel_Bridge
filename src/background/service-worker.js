@@ -104,8 +104,10 @@ class SubtitleService {
     try {
       const {
         chunkIndex,
-        startTime,
-        endTime,
+        audioStartTime,
+        audioEndTime,
+        videoStartTime, // 影片絕對時間（關鍵欄位）
+        videoDuration,
         audioBuffer,
         audioBase64,
         blob,
@@ -115,8 +117,8 @@ class SubtitleService {
       } = chunkData;
 
       console.log(`[SubtitleService] 處理 Chunk ${chunkIndex}`, {
-        startTime: startTime.toFixed(2),
-        endTime: endTime.toFixed(2),
+        audioTime: `${audioStartTime?.toFixed(2) || 'N/A'}s - ${audioEndTime?.toFixed(2) || 'N/A'}s`,
+        videoTime: `${videoStartTime?.toFixed(2) || 'N/A'}s`,
         size: `${(size / 1024).toFixed(2)} KB`,
         mimeType: mimeType || 'unknown',
         hasAudioBuffer: audioBuffer instanceof ArrayBuffer,
@@ -154,9 +156,10 @@ class SubtitleService {
       });
 
       // 2. OverlapProcessor 處理 (去重與斷句優化)
+      // 使用影片絕對時間調整 segments 時間戳
       const processedSegments = this.overlapProcessor.process(
         transcription,
-        startTime
+        videoStartTime // 使用影片絕對時間（關鍵修復）
       );
 
       console.log(`[SubtitleService] OverlapProcessor 處理完成`, {
@@ -168,17 +171,19 @@ class SubtitleService {
       // 3. 記錄成本
       const durationSeconds = typeof duration === 'number'
         ? duration
-        : endTime - startTime;
+        : (videoDuration || (audioEndTime - audioStartTime));
       await APIKeyManager.trackWhisperUsage(durationSeconds);
 
-      // 4. 發送字幕到 Content Script (只發送新的 segments)
+      // 4. 發送字幕到 Content Script (segments 已是影片絕對時間)
       if (processedSegments.length > 0) {
         await this.sendSubtitleToContent({
           chunkIndex,
-          startTime,
-          endTime,
+          videoStartTime, // 影片絕對時間
+          videoDuration,
+          audioStartTime, // 音訊相對時間（供除錯）
+          audioEndTime,
           text: transcription.text,
-          segments: processedSegments,
+          segments: processedSegments, // segments 已調整為影片絕對時間
           language: transcription.language,
         });
       } else {

@@ -17,6 +17,7 @@ let mediaRecorder = null;
 let playbackElement = null;
 let chunkIndex = 0;
 let captureStartMs = 0;
+let captureVideoTime = 0; // 音訊擷取開始時的影片時間（秒）
 let lastChunkTimestampMs = 0;
 let accumulatedDuration = 0;
 let activeMimeType = 'audio/webm;codecs=opus';
@@ -81,10 +82,11 @@ async function handleStartAudioCapture(captureData, sendResponse) {
   console.log('[Offscreen] ========================================');
 
   try {
-    const { streamId, tabId } = captureData;
+    const { streamId, tabId, videoStartTime } = captureData;
 
     console.log('[Offscreen] StreamID:', streamId);
     console.log('[Offscreen] TabID:', tabId);
+    console.log('[Offscreen] 影片起始時間:', videoStartTime, 's');
 
     await stopAudioCapture();
 
@@ -106,7 +108,7 @@ async function handleStartAudioCapture(captureData, sendResponse) {
     const recorderOptions = mimeType ? { mimeType, audioBitsPerSecond: 128000 } : { audioBitsPerSecond: 128000 };
     mediaRecorder = new MediaRecorder(mediaStream, recorderOptions);
 
-    resetRecorderState();
+    resetRecorderState(videoStartTime);
     wireRecorderEvents(tabId);
 
     mediaRecorder.start(CHUNK_CONFIG.CHUNK_DURATION * 1000);
@@ -121,12 +123,18 @@ async function handleStartAudioCapture(captureData, sendResponse) {
   }
 }
 
-function resetRecorderState() {
+function resetRecorderState(videoStartTime = 0) {
   chunkIndex = 0;
   captureStartMs = performance.now();
+  captureVideoTime = videoStartTime; // 記錄影片起始時間
   lastChunkTimestampMs = captureStartMs;
   accumulatedDuration = 0;
   webmHeaderBuffer = null;
+
+  console.log('[Offscreen] 🎬 時間基準設定:', {
+    captureVideoTime: captureVideoTime.toFixed(2) + 's',
+    captureStartMs,
+  });
 }
 
 function wireRecorderEvents(tabId) {
@@ -150,11 +158,14 @@ function wireRecorderEvents(tabId) {
 
     const now = performance.now();
     const durationSeconds = Math.max(0.1, (now - lastChunkTimestampMs) / 1000);
-    const startTime = accumulatedDuration;
-    const endTime = startTime + durationSeconds;
+    const audioStartTime = accumulatedDuration; // 音訊相對時間（相對於擷取開始）
+    const audioEndTime = audioStartTime + durationSeconds;
 
     lastChunkTimestampMs = now;
-    accumulatedDuration = endTime;
+    accumulatedDuration = audioEndTime;
+
+    // 計算影片絕對時間（關鍵修復）
+    const videoAbsoluteTime = captureVideoTime + audioStartTime;
 
     const mimeType = event.data.type || activeMimeType;
     const blobSize = event.data.size;
@@ -163,6 +174,8 @@ function wireRecorderEvents(tabId) {
       chunkIndex,
       size: `${(blobSize / 1024).toFixed(2)} KB`,
       duration: durationSeconds.toFixed(2) + 's',
+      audioTime: `${audioStartTime.toFixed(2)}s - ${audioEndTime.toFixed(2)}s`,
+      videoTime: `${videoAbsoluteTime.toFixed(2)}s`,
       mimeType,
     });
 
@@ -175,8 +188,10 @@ function wireRecorderEvents(tabId) {
 
         const payload = {
           chunkIndex: currentChunkIndex,
-          startTime,
-          endTime,
+          audioStartTime, // 音訊相對時間（供除錯）
+          audioEndTime,
+          videoStartTime: videoAbsoluteTime, // 影片絕對時間（關鍵欄位）
+          videoDuration: durationSeconds,
           audioBuffer: processedBuffer,
           audioByteLength: processedBuffer.byteLength,
           size: blobSize,
