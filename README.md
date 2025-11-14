@@ -104,6 +104,50 @@ this.container.style.height = `${rect.height}px`;
 
 ---
 
+## ⏱️ 時間同步技術 (Time Synchronization)
+
+### 時間基準對應策略
+
+Babel Bridge 需要將音訊擷取時間與影片播放時間精確對應，確保字幕在正確時刻顯示。
+
+**核心挑戰**：
+- 音訊處理延遲（MediaRecorder 累積 + Whisper API 處理）：5-7 秒
+- Whisper 返回的時間戳是相對於音訊片段開始的相對時間
+- 需要轉換為影片播放時間軸的絕對時間
+
+**解決方案**：
+1. **音訊擷取時記錄影片時間**：`captureVideoTime = video.currentTime`
+2. **計算影片絕對時間**：`videoAbsoluteTime = captureVideoTime + audioElapsed`
+3. **OverlapProcessor 調整時間戳**：將 Whisper segments 轉換為影片絕對時間
+4. **VideoMonitor 動態匹配**：根據 `video.currentTime` 查找對應 segment
+
+**參考專案**：
+- [libass/JavascriptSubtitlesOctopus](https://github.com/libass/JavascriptSubtitlesOctopus) - MIT License（timeOffset 機制）
+- [chamika1/netflix_subtitles_adder](https://github.com/chamika1/netflix_subtitles_adder) - MIT License（video.currentTime 同步）
+- [mediaelement/mediaelement](https://github.com/mediaelement/mediaelement) - MIT License（seeked 事件處理）
+
+**Seek 事件處理**（Phase 1.5 規劃中）：
+- 監聽 `video.addEventListener('seeked')` 事件
+- 重新校準時間基準：`captureVideoTime = newVideoTime - audioElapsed`
+- 確保拖曳時間軸後字幕仍能正確對應
+
+**實作細節**：
+```javascript
+// Offscreen: 記錄影片起始時間
+captureVideoTime = videoStartTime;  // 從 Content Script 傳入
+
+// 每個 chunk 計算影片絕對時間
+const videoAbsoluteTime = captureVideoTime + accumulatedDuration;
+
+// OverlapProcessor: 調整 segments 為影片時間
+segment.start = videoAbsoluteTime + whisperSegment.start;
+segment.end = videoAbsoluteTime + whisperSegment.end;
+```
+
+詳見 Phase 1.5 時間同步修復計劃（2025-11-15 規劃中）
+
+---
+
 ## 🧰 技術棧 (Tech Stack)
 
 | 類別 | 技術 | 備註 |
@@ -524,6 +568,11 @@ MIT License © 2025 Babel Bridge Contributors
 - [Natural](https://github.com/NaturalNode/natural) (MIT) - Levenshtein Distance 演算法實作
 - [WhisperJAV](https://github.com/meizhong986/WhisperJAV) (MIT) by @meizhong986 - 字幕去重邏輯參考
 - [srt](https://github.com/cdown/srt) (MIT) by @cdown - SRT 字幕處理工具
+
+### 字幕時間同步
+- [JavascriptSubtitlesOctopus](https://github.com/libass/JavascriptSubtitlesOctopus) (MIT) by @libass - 字幕 timeOffset 同步機制參考
+- [netflix_subtitles_adder](https://github.com/chamika1/netflix_subtitles_adder) (MIT) by @chamika1 - video.currentTime 同步邏輯參考
+- [MediaElement.js](https://github.com/mediaelement/mediaelement) (MIT) - HTML5 媒體事件處理參考
 
 ### 文字分塊與 Overlap 管理
 - [tokenx](https://github.com/johannschopplich/tokenx) (MIT) by @johannschopplich - 文字分塊與 overlap 策略參考
