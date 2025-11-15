@@ -197,13 +197,25 @@ class SubtitleOverlay {
       currentVideoTime: currentVideoTime.toFixed(2),
     });
 
-    // segments 已是影片絕對時間，無需調整（關鍵修復）
-    const segments = data.segments;
+    // Service Worker 已提供正確的絕對時間，只需處理延遲到達的情況
+    const segments = data.segments.map(seg => {
+      // 延遲到達補償：如果 segment 已經過去，延長顯示時間
+      const delaySeconds = Math.max(0, currentVideoTime - seg.end);
+      const adjustedEnd = delaySeconds > 0 ? currentVideoTime + 3 : seg.end;
+      
+      return {
+        ...seg,
+        end: adjustedEnd,
+        _delayedArrival: delaySeconds > 0,
+        _originalEnd: seg.end,
+      };
+    });
 
     console.log('[ContentScript] 📊 Segments 時間範圍:', {
       first: segments[0] ? `${segments[0].start.toFixed(2)}s - ${segments[0].end.toFixed(2)}s` : 'N/A',
       last: segments[segments.length - 1] ? `${segments[segments.length - 1].start.toFixed(2)}s - ${segments[segments.length - 1].end.toFixed(2)}s` : 'N/A',
       text: segments[0]?.text || 'N/A',
+      delayedArrival: segments[0]?._delayedArrival || false,
     });
 
     // 將 segments 加入儲存
@@ -234,6 +246,17 @@ class SubtitleOverlay {
 
     // 找出當前時間應該顯示的 segment
     const segmentIndex = this.findSegmentIndex(currentTime);
+
+    // 診斷: 顯示搜尋結果
+    if (this.segments.length > 0) {
+      console.log('[ContentScript] 🔍 updateDisplay:', {
+        currentTime: currentTime.toFixed(2),
+        totalSegments: this.segments.length,
+        segmentIndex,
+        firstSegment: `${this.segments[0].start.toFixed(2)}s - ${this.segments[0].end.toFixed(2)}s`,
+        lastSegment: `${this.segments[this.segments.length - 1].start.toFixed(2)}s - ${this.segments[this.segments.length - 1].end.toFixed(2)}s`,
+      });
+    }
 
     if (segmentIndex === -1) {
       // 沒有符合的 segment，隱藏字幕

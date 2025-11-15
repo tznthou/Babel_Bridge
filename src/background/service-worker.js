@@ -100,6 +100,35 @@ class SubtitleService {
    * 處理音訊 chunk (來自 Offscreen Document 的 audio/webm)
    * @private
    */
+  /**
+   * 查詢當前影片時間（動態時間同步）
+   * @returns {Promise<number|null>} 影片當前時間（秒），失敗返回 null
+   * @private
+   */
+  async getCurrentVideoTime() {
+    if (!this.currentTabId) {
+      console.warn('[SubtitleService] 無法查詢影片時間：currentTabId 為空');
+      return null;
+    }
+
+    try {
+      const response = await chrome.tabs.sendMessage(
+        this.currentTabId,
+        { type: 'GET_VIDEO_CURRENT_TIME' }
+      );
+
+      if (response && typeof response.currentTime === 'number') {
+        return response.currentTime;
+      }
+
+      console.warn('[SubtitleService] 無法取得影片時間，回應無效:', response);
+      return null;
+    } catch (error) {
+      console.warn('[SubtitleService] 查詢影片時間失敗:', error.message);
+      return null;
+    }
+  }
+
   async processChunk(chunkData) {
     try {
       const {
@@ -155,11 +184,31 @@ class SubtitleService {
         segments: transcription.segments.length,
       });
 
+      // 動態時間同步：查詢當前影片時間，重新計算 videoStartTime（關鍵修復）
+      const currentVideoTime = await this.getCurrentVideoTime();
+      let correctedVideoStartTime = videoStartTime; // 預設使用 Offscreen 計算的時間
+
+      if (currentVideoTime !== null) {
+        // 往回推算：currentTime - audioDuration = 這段音訊開始時的影片時間
+        const audioDuration = audioEndTime - audioStartTime;
+        correctedVideoStartTime = currentVideoTime - audioDuration;
+        
+        console.log('[SubtitleService] 🔄 動態時間同步:', {
+          offscreenCalculated: videoStartTime.toFixed(2) + 's',
+          currentVideoTime: currentVideoTime.toFixed(2) + 's',
+          audioDuration: audioDuration.toFixed(2) + 's',
+          correctedVideoStartTime: correctedVideoStartTime.toFixed(2) + 's',
+          timeDiff: (correctedVideoStartTime - videoStartTime).toFixed(2) + 's',
+        });
+      } else {
+        console.warn('[SubtitleService] ⚠️ 無法查詢影片時間，使用 Offscreen 計算值');
+      }
+
       // 2. OverlapProcessor 處理 (去重與斷句優化)
-      // 使用影片絕對時間調整 segments 時間戳
+      // 使用動態修正後的影片時間調整 segments 時間戳
       const processedSegments = this.overlapProcessor.process(
         transcription,
-        videoStartTime // 使用影片絕對時間（關鍵修復）
+        correctedVideoStartTime // 使用動態修正後的時間（關鍵修復）
       );
 
       console.log(`[SubtitleService] OverlapProcessor 處理完成`, {
@@ -167,6 +216,16 @@ class SubtitleService {
         processedSegments: processedSegments.length,
         filtered: transcription.segments.length - processedSegments.length,
       });
+
+      // 診斷: 顯示處理後的 segments 時間範圍
+      if (processedSegments.length > 0) {
+        console.log('[SubtitleService] 🔍 Processed segments 時間範圍:', {
+          first: `${processedSegments[0].start.toFixed(2)}s - ${processedSegments[0].end.toFixed(2)}s`,
+          last: `${processedSegments[processedSegments.length - 1].start.toFixed(2)}s - ${processedSegments[processedSegments.length - 1].end.toFixed(2)}s`,
+          videoStartTime: correctedVideoStartTime.toFixed(2),
+          firstText: processedSegments[0].text.substring(0, 30),
+        });
+      }
 
       // 3. 記錄成本
       const durationSeconds = typeof duration === 'number'
@@ -178,7 +237,7 @@ class SubtitleService {
       if (processedSegments.length > 0) {
         await this.sendSubtitleToContent({
           chunkIndex,
-          videoStartTime, // 影片絕對時間
+          videoStartTime: correctedVideoStartTime, // 動態修正後的影片時間
           videoDuration,
           audioStartTime, // 音訊相對時間（供除錯）
           audioEndTime,

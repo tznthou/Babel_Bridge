@@ -303,6 +303,9 @@ refactor: simplify error handling
 7. **為何使用 AES-GCM 加密 API Key**
    防止惡意 Extension 或本地惡意軟體竊取 API Key。使用 AES-256-GCM (AEAD) 提供機密性與完整性保護,PBKDF2-100k 迭代符合 OWASP 2023 建議,瀏覽器指紋衍生金鑰無需使用者記憶密碼。安全評分: 96/100。
 
+8. **為何使用動態時間查詢**（2025-11-15）
+   累積計算（`captureTime + audioElapsed`）在暫停時產生 25-35s 誤差。改為 Whisper 完成後查詢 `video.currentTime` 往回推算（`currentTime - audioDuration`），timeDiff 穩定 0.7-2.5s。詳見 `service-worker.js`。
+
 ## 常見問題除錯
 
 ### 字幕延遲過高 (> 8 秒)
@@ -313,7 +316,9 @@ refactor: simplify error handling
 4. **網路連線品質** - 檢查 Network tab
 5. **是否啟用翻譯** (翻譯額外增加 2-3 秒) - 目前 Phase 1 未實作
 
-**預期總延遲**: 5.3-6.5 秒 (3s 累積 + 0.5s 編碼 + 2-3s Whisper)
+**預期總延遲**: 5.5-7 秒（MediaRecorder 3s + Whisper 2-3s + 網路 0.5-1s = **雲端架構物理極限**）
+
+未來若需更低延遲，需改用本地 Whisper 模型（transformers.js），可達 2-3 秒。
 
 ### 字幕未顯示或不同步
 檢查點:
@@ -384,72 +389,18 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
    - 解決方案: 使用正常 Chrome 視窗手動測試
 
 
-### ✅ 已修復問題
+### ✅ 已修復問題（詳見開發記錄）
 
-1. ~~**Content Script 時間同步問題**~~ (已於 2025-11-09 修復)
-   - ~~現象: 字幕顯示完整文字,未根據影片時間逐句顯示~~
-   - ~~影響: 使用者體驗不佳,字幕與影片不同步~~
-   - ✅ **修復**: 實作 VideoMonitor 類別,監聽 video 元素的 timeupdate 事件
-   - ✅ **修復**: 根據 `video.currentTime` 動態查找並顯示對應的 segment
-   - ✅ **修復**: 支援 play/pause/seek 事件的即時響應
-   - ✅ **驗證**: Demo 頁面測試 5 通過,字幕與影片完美同步
+1. **Content Script 時間同步問題**（2025-11-09 修復）
+   - 實作 VideoMonitor 類別，根據 `video.currentTime` 動態顯示 segment
 
-2. ~~**Offscreen Document 音訊處理導致瀏覽器凍結**~~ (2025-11-09 至 2025-11-11 完全修復)
-   - ~~**症狀**: 啟用字幕後整個 Chrome 瀏覽器完全凍結,無聲音輸出~~
-   - ~~**錯誤診斷路徑**: 懷疑 Offscreen headless 環境限制、Audio 元素行為、Chrome API bug~~
+2. **瀏覽器凍結問題**（2025-11-09~11 修復）
+   - 根本原因：ScriptProcessorNode 在 Offscreen Document 觸發死鎖
+   - 解決方案：改用 MediaRecorder 管線（詳見 `NewWay.md`）
 
-   - ✅ **根本原因**: ScriptProcessorNode + AudioContext 在 Offscreen Document 中與 tabCapture 組合觸發 Chrome 底層死鎖
-
-   - ✅ **修復方案**（完全重構音訊管線）:
-     1. **移除 ScriptProcessorNode + MP3 編碼管線**（死鎖元兇）
-     2. **改用 MediaRecorder**：直接產生 audio/webm chunk（3 秒 timeslice）
-     3. **Base64 傳輸**：Offscreen 端將 Blob → ArrayBuffer → Base64，避免 MV3 Blob 失真
-     4. **Service Worker 重建**：createAudioBlob() 將 Base64 → Blob → Whisper API
-     5. **音訊輸出**：suppressLocalAudioPlayback: true + Audio 鏡射播放（避免回音）
-
-   - ✅ **移除檔案**:
-     - `src/background/mp3-encoder.js`
-     - `src/workers/mp3-encoder.worker.js`
-     - `lamejs` npm 依賴
-     - manifest.json 的 Web Worker 配置
-
-   - ✅ **驗證**:
-     - 瀏覽器不再凍結
-     - 音訊正常播放
-     - MediaRecorder 穩定產生 chunk
-     - Base64 傳輸成功（部分 Whisper 格式問題待修復，見「待解決問題 #4」）
-
-   - 📚 **關鍵教訓**:
-     - Deprecated API 在非標準環境（Offscreen, Service Worker）可能觸發嚴重問題
-     - 技術債務不只是「未來問題」，可能是**當前危機的根源**
-     - 架構級問題需要**根本解決（替換管線）而非修補症狀**
-     - 文件中的「潛在死鎖」線索應優先與故障關聯
-
-   - 📖 **詳細記錄**: 見 `NewWay.md` 與 `.serena/memories/browser-freeze-debugging-2025-11-09.md`
-
-3. ~~**WebM Header 缺失導致 95% chunks 無法辨識**~~ (2025-11-11 完全修復)
-   - ~~**症狀**: 只有第一個 chunk 成功轉錄，後續 chunk 出現 `WHISPER_UNSUPPORTED_FORMAT` 錯誤~~
-
-   - ✅ **根本原因**: MediaRecorder timeslice 行為 - 只有第一個 chunk 含完整 EBML header，後續 chunk 只有 Cluster 資料
-
-   - ✅ **修復方案**（Offscreen 自動補 header）:
-     1. **解析 chunk0 header**: 在 `prepareWebMChunk()` 中尋找 Cluster signature (`0x1F 0x43 0xB6 0x75`)
-     2. **快取 header**: 將 Cluster 前的內容（EBML + Segment + Tracks metadata）儲存到 `webmHeaderBuffer`
-     3. **自動補強 chunk1+**: 所有後續 chunk 都自動 `concat(header + chunk)`
-     4. **Base64 同步**: Base64 備援也使用補過 header 的 buffer
-
-   - ✅ **驗證**:
-     - Service Worker 診斷顯示所有 chunk 都有 `1a 45 df a3` header
-     - Whisper 連續十幾個 chunk 成功轉錄
-     - 成功率從 4.3% (1/23) 提升到 100%
-     - 字幕連續產生無中斷
-
-   - 📚 **關鍵教訓**:
-     - MediaRecorder timeslice 產生的中間 chunk 無法獨立解碼
-     - WebM container 格式要求每個獨立檔案都有完整 header
-     - 診斷 hex bytes 能快速定位格式問題
-
-   - 📖 **詳細記錄**: 見 `NewWay2.md` 與 `.serena/memories/phase1-testing-final-2025-11-11.md`
+3. **WebM Header 缺失問題**（2025-11-11 修復）
+   - 原因：MediaRecorder timeslice chunk1+ 缺 EBML header
+   - 解決：自動補強 header，Whisper 成功率 4.3% → 100%（詳見 `NewWay2.md`）
 
 ### 💡 未來改進方向
 
@@ -470,7 +421,14 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
 
 ## 專案狀態
 
-目前專案處於 **Phase 1 已完成（含連續字幕產生驗證）,準備進入 Phase 2** 階段 (更新日期: 2025-11-11)
+目前專案處於 **Phase 1 已完成，達到 MVP 狀態，準備進入 Phase 2** 階段 (更新日期: 2025-11-15)
+
+**MVP 核心價值**：
+- ✅ 高準確度語音辨識（Whisper 100% 成功率）
+- ✅ 智能字幕去重與斷句（OverlapProcessor）
+- ✅ 動態時間同步（timeDiff 穩定 0.7-2.5s）
+- ✅ 安全的 API Key 管理（AES-256-GCM）
+- ✅ 5-7 秒延遲（雲端 Whisper 架構物理極限）
 
 ### Phase 0: 基礎建置與安全機制 ✅ (已完成)
 - ✅ PRD (產品需求文件)
@@ -490,30 +448,16 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
 - 更新 `popup.js` 支援遮罩顯示與更換 API Key 流程
 - 建置產物大小: popup 5.33 KB (gzip), service-worker 8.75 KB (gzip)
 
-### Phase 1: 基礎辨識功能 ✅ (已完成，含關鍵架構遷移)
-- ✅ 音訊擷取 (chrome.tabCapture) - `audio-capture.js` (182 lines)
-- ✅ ~~音訊切塊 (Rolling Window)~~ → **已移除**（改用 MediaRecorder）
-- ✅ **MediaRecorder 音訊擷取**（關鍵遷移）- `offscreen/offscreen.js` (audio/webm chunk)
-  - 移除 ScriptProcessorNode + MP3 編碼管線（死鎖元兇）
-  - Base64 傳輸避免 MV3 Blob 失真
-  - suppressLocalAudioPlayback + Audio 鏡射播放
-- ✅ Whisper API 整合 - `whisper-client.js` (265 lines)
-- ✅ OverlapProcessor (斷句優化) - `subtitle-processor.js` (418 lines)
-- ✅ 基礎字幕顯示 - `content-script.js` (329 lines) + CSS (96 lines)
-- ✅ **時間同步字幕顯示** - VideoMonitor 類別,根據影片時間動態顯示
-- ✅ 多語言斷句規則 - `language-rules.js` (352 lines)
-- ✅ 文字相似度計算 - `text-similarity.js` (Levenshtein Distance)
+### Phase 1: 基礎辨識功能 ✅ (已完成 - 2025-11-15，達到 MVP 狀態)
 
-**關鍵成果**:
-- 完整 MediaRecorder 管線已建立（修復瀏覽器凍結問題）
-- **WebM Header 自動補強**（2025-11-11）：解決 95% chunks 無法辨識問題，Whisper 成功率 100%
-- OverlapProcessor 雙重去重策略 (80% time OR 50% time + 80% text)
-- Content Script 時間同步修復 (支援 play/pause/seek)
-- Trusted Types 相容（改用 DOM API）
-- 測試覆蓋: OverlapProcessor 100%, 整體 Demo 頁面 5 個測試
-- **架構遷移**: ScriptProcessorNode → MediaRecorder（2025-11-09 至 2025-11-11）
-- **字幕連續產生**：實測 YouTube 影片 ≥ 1 分鐘，穩定產生連續字幕
-- Git 提交: `1aa0cf5` (pipeline) + `051ee78` (time sync) + `0c7a215` (MediaRecorder 修復) + `86b5777` (WebM header)
+詳細清單見 [README.md](README.md) § Phase 1
+
+**關鍵突破**：
+- MediaRecorder 管線（修復瀏覽器凍結問題）
+- WebM Header 補強（Whisper 成功率 100%）
+- 動態時間同步（timeDiff 0.7-2.5s，暫停不累積誤差）
+- OverlapProcessor 雙重去重（過濾率 15-25%）
+- **達到 MVP 狀態**（2025-11-15）
 
 ### 待開發 (按 Milestone 順序):
 
@@ -535,6 +479,7 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
 - [CLAUDE.md](CLAUDE.md) - Claude 開發指引 (本文件)
 
 ### 開發記錄 (Serena 記憶)
+- **`.serena/memories/dynamic-time-sync-implementation-2025-11-15.md`** - **動態時間同步實作與 MVP 確認**（2025-11-15，達成 MVP）
 - **`NewWay.md`** - **MediaRecorder 管線遷移完整記錄**（2025-11-11，瀏覽器凍結修復）
 - `.serena/memories/browser-freeze-debugging-2025-11-09.md` - 瀏覽器凍結問題診斷記錄（已修復）
 - `.serena/memories/phase1-completion-2025-11-09.md` - **Phase 1 完整記錄** (11 個模組詳細規格)
