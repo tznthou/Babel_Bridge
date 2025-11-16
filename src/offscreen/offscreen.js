@@ -1,53 +1,26 @@
 /**
- * Offscreen Document - 以 MediaRecorder 擷取 tab 音訊
+ * Offscreen Document - Deepgram AudioWorklet PCM 音訊處理
  *
  * Manifest V3 限制：
  * - Service Worker 不支援 MediaStream / AudioContext
- * - 需在 Offscreen Document 取得音訊並以非阻塞方式切片
+ * - 需在 Offscreen Document 取得音訊並處理
  *
- * 新流程：
+ * Deepgram 流程（即時串流）：
  * Service Worker → getMediaStreamId() → streamId
- * → Offscreen Document (MediaRecorder) → audio/webm chunk
- * → Service Worker → Whisper API
+ * → Offscreen Document (AudioWorklet) → PCM linear16 frames (20ms)
+ * → Service Worker → DeepgramStreamClient → WebSocket
+ *
+ * @author Claude (AI Coding Assistant)
+ * @date 2025-11-16
  */
 
 // === 狀態 ===
 let mediaStream = null;
-let mediaRecorder = null;
-let playbackElement = null;
-let chunkIndex = 0;
-let captureStartMs = 0;
-let captureVideoTime = 0; // 音訊擷取開始時的影片時間（秒）
-let lastChunkTimestampMs = 0;
-let accumulatedDuration = 0;
-let activeMimeType = 'audio/webm;codecs=opus';
-let webmHeaderBuffer = null;
-
-const CHUNK_CONFIG = {
-  CHUNK_DURATION: 3, // 3 秒 timeslice
-};
-
-const TRANSPORT_OPTIONS = {
-  includeBase64Fallback: true, // 目前仍啟用 Base64 作為備援，確保 SW 可解碼
-};
-
-const RECORDER_PREFERENCES = [
-  'audio/webm;codecs=opus',
-  'audio/webm',
-  'audio/ogg;codecs=opus',
-];
-
-/**
- * 選擇第一個被瀏覽器支援的 MediaRecorder MIME 類型
- */
-function resolveMimeType() {
-  for (const candidate of RECORDER_PREFERENCES) {
-    if (MediaRecorder.isTypeSupported(candidate)) {
-      return candidate;
-    }
-  }
-  return undefined;
-}
+let audioContext = null;
+let workletNode = null;
+let sourceNode = null;
+let isProcessing = false;
+let frameCount = 0;
 
 /**
  * 處理來自 Service Worker 的訊息
@@ -55,7 +28,7 @@ function resolveMimeType() {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { type, data } = message;
 
-  console.log('[Offscreen] 收到訊息:', type);
+  console.log('[Offscreen Deepgram] 收到訊息:', type);
 
   switch (type) {
     case 'OFFSCREEN_START_AUDIO_CAPTURE':
@@ -67,224 +40,120 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
 
     default:
-      console.warn('[Offscreen] 未知訊息類型:', type);
+      console.warn('[Offscreen Deepgram] 未知訊息類型:', type);
       sendResponse({ success: false, error: 'Unknown message type' });
       return false;
   }
 });
 
 /**
- * 開始音訊擷取
+ * 開始音訊擷取與 PCM 轉換
  */
 async function handleStartAudioCapture(captureData, sendResponse) {
-  console.log('[Offscreen] ========================================');
-  console.log('[Offscreen] 🎙️ handleStartAudioCapture');
-  console.log('[Offscreen] ========================================');
+  console.log('[Offscreen Deepgram] ========================================');
+  console.log('[Offscreen Deepgram] 🎙️ 開始音訊擷取（AudioWorklet PCM）');
+  console.log('[Offscreen Deepgram] ========================================');
 
   try {
     const { streamId, tabId, videoStartTime } = captureData;
 
-    console.log('[Offscreen] StreamID:', streamId);
-    console.log('[Offscreen] TabID:', tabId);
-    console.log('[Offscreen] 影片起始時間:', videoStartTime, 's');
+    console.log('[Offscreen Deepgram] StreamID:', streamId);
+    console.log('[Offscreen Deepgram] TabID:', tabId);
+    console.log('[Offscreen Deepgram] 影片起始時間:', videoStartTime, 's');
 
+    // 清理舊資源
     await stopAudioCapture();
 
+    // 1. 取得 tab 音訊串流
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         mandatory: {
           chromeMediaSource: 'tab',
           chromeMediaSourceId: streamId,
-          suppressLocalAudioPlayback: true,
+          suppressLocalAudioPlayback: true, // 避免回音
         },
       },
     });
 
-    console.log('[Offscreen] ✅ MediaStream 已取得');
+    console.log('[Offscreen Deepgram] ✅ MediaStream 已取得');
 
-    const mimeType = resolveMimeType();
-    activeMimeType = mimeType || 'audio/webm';
+    // 2. 建立 AudioContext (48kHz 預設)
+    audioContext = new AudioContext();
 
-    const recorderOptions = mimeType ? { mimeType, audioBitsPerSecond: 128000 } : { audioBitsPerSecond: 128000 };
-    mediaRecorder = new MediaRecorder(mediaStream, recorderOptions);
+    console.log('[Offscreen Deepgram] 🎵 AudioContext 建立', {
+      sampleRate: audioContext.sampleRate,
+      state: audioContext.state,
+    });
 
-    resetRecorderState(videoStartTime);
-    wireRecorderEvents(tabId);
+    // 3. 載入 AudioWorklet 模組
+    await audioContext.audioWorklet.addModule(
+      chrome.runtime.getURL('src/offscreen/pcm-processor.js')
+    );
 
-    mediaRecorder.start(CHUNK_CONFIG.CHUNK_DURATION * 1000);
+    console.log('[Offscreen Deepgram] ✅ PCM processor 已載入');
 
-    console.log('[Offscreen] ✅ MediaRecorder 已啟動，timeslice:', CHUNK_CONFIG.CHUNK_DURATION, 's');
-    ensurePlaybackMirror();
+    // 4. 建立 AudioWorklet 節點
+    workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
+
+    // 5. 監聽 PCM frames
+    workletNode.port.onmessage = (event) => {
+      handlePCMFrame(event.data, tabId);
+    };
+
+    // 6. 連接音訊管線: Source → Worklet (不需要連到 Destination)
+    sourceNode = audioContext.createMediaStreamSource(mediaStream);
+    sourceNode.connect(workletNode);
+
+    isProcessing = true;
+    frameCount = 0;
+
+    console.log('[Offscreen Deepgram] ✅ 音訊管線已建立（48kHz → 16kHz PCM）');
+
     sendResponse({ success: true });
   } catch (error) {
-    console.error('[Offscreen] ❌ 無法啟動音訊擷取:', error);
+    console.error('[Offscreen Deepgram] ❌ 啟動失敗:', error);
     await stopAudioCapture();
     sendResponse({ success: false, error: error.message });
   }
 }
 
-function resetRecorderState(videoStartTime = 0) {
-  chunkIndex = 0;
-  captureStartMs = performance.now();
-  captureVideoTime = videoStartTime; // 記錄影片起始時間
-  lastChunkTimestampMs = captureStartMs;
-  accumulatedDuration = 0;
-  webmHeaderBuffer = null;
+/**
+ * 處理 PCM frame（來自 AudioWorklet）
+ */
+function handlePCMFrame(frameData, tabId) {
+  const { type, data, frameIndex, sampleCount, sampleRate } = frameData;
 
-  console.log('[Offscreen] 🎬 時間基準設定:', {
-    captureVideoTime: captureVideoTime.toFixed(2) + 's',
-    captureStartMs,
-  });
-}
+  if (type === 'PCM_FRAME') {
+    frameCount++;
 
-function wireRecorderEvents(tabId) {
-  mediaRecorder.onstart = () => {
-    console.log('[Offscreen] 🎬 MediaRecorder onstart (Tab', tabId, ')');
-  };
-
-  mediaRecorder.onerror = (event) => {
-    console.error('[Offscreen] ❌ MediaRecorder 錯誤:', event.error);
-  };
-
-  mediaRecorder.onstop = () => {
-    console.log('[Offscreen] ⏹️ MediaRecorder 已停止');
-    stopPlaybackMirror();
-  };
-
-  mediaRecorder.ondataavailable = (event) => {
-    if (!event.data || event.data.size === 0) {
-      return;
-    }
-
-    const now = performance.now();
-    const durationSeconds = Math.max(0.1, (now - lastChunkTimestampMs) / 1000);
-    const audioStartTime = accumulatedDuration; // 音訊相對時間（相對於擷取開始）
-    const audioEndTime = audioStartTime + durationSeconds;
-
-    lastChunkTimestampMs = now;
-    accumulatedDuration = audioEndTime;
-
-    // 計算影片絕對時間（關鍵修復）
-    const videoAbsoluteTime = captureVideoTime + audioStartTime;
-
-    const mimeType = event.data.type || activeMimeType;
-    const blobSize = event.data.size;
-
-    console.log('[Offscreen] 🎧 Chunk 準備完成', {
-      chunkIndex,
-      size: `${(blobSize / 1024).toFixed(2)} KB`,
-      duration: durationSeconds.toFixed(2) + 's',
-      audioTime: `${audioStartTime.toFixed(2)}s - ${audioEndTime.toFixed(2)}s`,
-      videoTime: `${videoAbsoluteTime.toFixed(2)}s`,
-      mimeType,
-    });
-
-    const currentChunkIndex = chunkIndex;
-    chunkIndex += 1;
-
-    event.data.arrayBuffer()
-      .then((arrayBuffer) => {
-        const processedBuffer = prepareWebMChunk(arrayBuffer, currentChunkIndex);
-
-        const payload = {
-          chunkIndex: currentChunkIndex,
-          audioStartTime, // 音訊相對時間（供除錯）
-          audioEndTime,
-          videoStartTime: videoAbsoluteTime, // 影片絕對時間（關鍵欄位）
-          videoDuration: durationSeconds,
-          audioBuffer: processedBuffer,
-          audioByteLength: processedBuffer.byteLength,
-          size: blobSize,
-          duration: durationSeconds,
-          mimeType,
-          tabId,
-        };
-
-        if (TRANSPORT_OPTIONS.includeBase64Fallback) {
-          payload.audioBase64 = arrayBufferToBase64(processedBuffer);
-        }
-
-        const sendPromise = chrome.runtime.sendMessage({
-          type: 'AUDIO_CHUNK_READY',
-          data: payload,
-        });
-
-        if (sendPromise && typeof sendPromise.catch === 'function') {
-          sendPromise.catch((err) => {
-            console.error('[Offscreen] ❌ 傳送 chunk 失敗:', err);
-          });
-        }
-      })
-      .catch((error) => {
-        console.error('[Offscreen] ❌ 轉換音訊資料失敗:', error);
+    // 只在首次和每 100 frames 記錄（避免 console 污染）
+    if (frameCount === 1 || frameCount % 100 === 0) {
+      console.log('[Offscreen Deepgram] 🎵 PCM Frame', {
+        frameIndex,
+        sampleCount,
+        sampleRate,
+        byteLength: data.byteLength,
+        frameCount,
       });
-  };
-}
-
-function arrayBufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = '';
-
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const subArray = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode.apply(null, subArray);
-  }
-
-  return btoa(binary);
-}
-
-function prepareWebMChunk(buffer, index) {
-  if (index === 0) {
-    if (!webmHeaderBuffer) {
-      const header = extractWebMHeader(buffer);
-      if (header) {
-        webmHeaderBuffer = header;
-        console.log('[Offscreen] 📎 WebM header captured', {
-          headerBytes: webmHeaderBuffer.byteLength,
-        });
-      } else {
-        console.warn('[Offscreen] ⚠️ 無法在第一個 chunk 找到 WebM header');
-      }
     }
-    return buffer;
+
+    // 轉發到 Service Worker → DeepgramStreamClient
+    chrome.runtime.sendMessage({
+      type: 'DEEPGRAM_PCM_FRAME',
+      data: {
+        pcmData: data, // ArrayBuffer (Int16)
+        frameIndex,
+        sampleCount,
+        sampleRate,
+        tabId,
+      },
+    }).catch((error) => {
+      console.error('[Offscreen Deepgram] ❌ 轉發 PCM frame 失敗:', error);
+    });
+  } else if (type === 'STATS') {
+    // 統計資訊
+    console.log('[Offscreen Deepgram] 📊 統計:', frameData.stats);
   }
-
-  if (!webmHeaderBuffer) {
-    console.warn('[Offscreen] ⚠️ 尚未取得 WebM header，直接傳送原始 chunk');
-    return buffer;
-  }
-
-  return concatArrayBuffers(webmHeaderBuffer, buffer);
-}
-
-function extractWebMHeader(buffer) {
-  const signature = [0x1f, 0x43, 0xb6, 0x75];
-  const bytes = new Uint8Array(buffer);
-
-  for (let i = 0; i <= bytes.length - signature.length; i++) {
-    let match = true;
-    for (let j = 0; j < signature.length; j++) {
-      if (bytes[i + j] !== signature[j]) {
-        match = false;
-        break;
-      }
-    }
-    if (match) {
-      return buffer.slice(0, i);
-    }
-  }
-
-  return null;
-}
-
-function concatArrayBuffers(headerBuffer, chunkBuffer) {
-  const header = new Uint8Array(headerBuffer);
-  const chunk = new Uint8Array(chunkBuffer);
-  const combined = new Uint8Array(header.byteLength + chunk.byteLength);
-  combined.set(header, 0);
-  combined.set(chunk, header.byteLength);
-  return combined.buffer;
 }
 
 /**
@@ -294,81 +163,59 @@ function handleStopAudioCapture(sendResponse) {
   stopAudioCapture()
     .then(() => sendResponse({ success: true }))
     .catch((error) => {
-      console.error('[Offscreen] ❌ 停止音訊擷取失敗:', error);
+      console.error('[Offscreen Deepgram] ❌ 停止失敗:', error);
       sendResponse({ success: false, error: error.message });
     });
 }
 
 async function stopAudioCapture() {
-  console.log('[Offscreen] 🛑 stopAudioCapture');
+  console.log('[Offscreen Deepgram] 🛑 停止音訊擷取');
 
-  stopPlaybackMirror();
+  isProcessing = false;
 
-  if (mediaRecorder) {
-    if (mediaRecorder.state !== 'inactive') {
-      try {
-        mediaRecorder.stop();
-      } catch (error) {
-        console.warn('[Offscreen] 停止 MediaRecorder 時發生錯誤:', error.message);
-      }
+  // 斷開音訊節點
+  if (sourceNode) {
+    try {
+      sourceNode.disconnect();
+    } catch (error) {
+      console.warn('[Offscreen Deepgram] sourceNode disconnect 錯誤:', error.message);
     }
-    mediaRecorder.ondataavailable = null;
-    mediaRecorder.onerror = null;
-    mediaRecorder.onstart = null;
-    mediaRecorder.onstop = null;
-    mediaRecorder = null;
+    sourceNode = null;
   }
 
+  if (workletNode) {
+    try {
+      workletNode.disconnect();
+      workletNode.port.onmessage = null;
+    } catch (error) {
+      console.warn('[Offscreen Deepgram] workletNode disconnect 錯誤:', error.message);
+    }
+    workletNode = null;
+  }
+
+  // 關閉 AudioContext
+  if (audioContext) {
+    try {
+      await audioContext.close();
+    } catch (error) {
+      console.warn('[Offscreen Deepgram] AudioContext close 錯誤:', error.message);
+    }
+    audioContext = null;
+  }
+
+  // 停止 MediaStream
   if (mediaStream) {
     mediaStream.getTracks().forEach((track) => track.stop());
     mediaStream = null;
   }
 
-  chunkIndex = 0;
-  accumulatedDuration = 0;
+  frameCount = 0;
+
+  console.log('[Offscreen Deepgram] ✅ 已清理所有資源');
 }
 
-console.log('[Offscreen] ========================================');
-console.log('[Offscreen] 🚀 Offscreen document 已載入 (MediaRecorder)');
-console.log('[Offscreen] UserAgent:', navigator.userAgent);
-console.log('[Offscreen] ========================================');
-
-function ensurePlaybackMirror() {
-  if (!mediaStream) {
-    return;
-  }
-
-  if (playbackElement) {
-    playbackElement.srcObject = mediaStream;
-    return;
-  }
-
-  playbackElement = new Audio();
-  playbackElement.srcObject = mediaStream;
-  playbackElement.autoplay = true;
-  playbackElement.playsInline = true;
-  playbackElement.volume = 1;
-  playbackElement.muted = false;
-
-  const playPromise = playbackElement.play();
-  if (playPromise && typeof playPromise.catch === 'function') {
-    playPromise.catch((error) => {
-      console.warn('[Offscreen] ⚠️ Audio mirror 無法播放:', error.message);
-    });
-  }
-}
-
-function stopPlaybackMirror() {
-  if (!playbackElement) {
-    return;
-  }
-
-  try {
-    playbackElement.pause();
-  } catch (error) {
-    console.warn('[Offscreen] 停止 Audio mirror 錯誤:', error.message);
-  }
-
-  playbackElement.srcObject = null;
-  playbackElement = null;
-}
+console.log('[Offscreen Deepgram] ========================================');
+console.log('[Offscreen Deepgram] 🚀 Deepgram offscreen document 已載入');
+console.log('[Offscreen Deepgram] AudioWorklet PCM processing ready');
+console.log('[Offscreen Deepgram] UserAgent:', navigator.userAgent);
+console.log('[Offscreen Deepgram] ========================================');
