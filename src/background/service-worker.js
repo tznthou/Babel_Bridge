@@ -66,6 +66,11 @@ class SubtitleService {
 
       this.currentTabId = tabId;
 
+      // 通知 Content Script 啟用字幕
+      await chrome.tabs.sendMessage(tabId, {
+        type: 'ENABLE_SUBTITLES'
+      });
+
       // 啟動音訊擷取 (Offscreen Document 會自動處理切塊和編碼)
       this.audioCapture = new AudioCapture();
       await this.audioCapture.start(tabId);
@@ -87,6 +92,20 @@ class SubtitleService {
   async disable() {
     if (!this.isActive) {
       return;
+    }
+
+    const tabId = this.currentTabId;
+
+    // 通知 Content Script 停用字幕
+    if (tabId) {
+      try {
+        await chrome.tabs.sendMessage(tabId, {
+          type: 'DISABLE_SUBTITLES'
+        });
+      } catch (error) {
+        // Content Script 可能已卸載，忽略錯誤
+        console.warn('[SubtitleService] 無法通知 Content Script 停用:', error.message);
+      }
     }
 
     this.cleanup();

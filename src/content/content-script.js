@@ -53,6 +53,12 @@ class VideoMonitor {
       });
 
       console.log('[VideoMonitor] 等待 video 元素出現...');
+
+      // 10 秒後停止監聽（避免在無 video 頁面上持續監聽）
+      setTimeout(() => {
+        observer.disconnect();
+        console.log('[VideoMonitor] 未偵測到 video 元素，停止監聽');
+      }, 10000);
     }
   }
 
@@ -150,6 +156,8 @@ class VideoMonitor {
  */
 class SubtitleOverlay {
   constructor() {
+    this.setupRetryCount = 0; // 追蹤 setupPositioning 重試次數
+    this.MAX_SETUP_RETRIES = 5; // 最多重試 5 次（5 秒）
     this.container = null;
     this.segments = []; // 儲存所有接收到的 segments（已是影片絕對時間）
     this.currentSegmentIndex = -1; // 當前顯示的 segment 索引
@@ -365,11 +373,21 @@ class SubtitleOverlay {
    * 移除 Overlay
    */
   destroy() {
+    console.log('[ContentScript] 🗑️  銷毀 SubtitleOverlay');
+
+    // 清理 VideoMonitor
     if (this.videoMonitor) {
       this.videoMonitor.detach();
       this.videoMonitor = null;
     }
 
+    // 清理 ResizeObserver
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+
+    // 移除 DOM 元素
     if (this.container && this.container.parentNode) {
       this.container.parentNode.removeChild(this.container);
     }
@@ -386,10 +404,24 @@ class SubtitleOverlay {
     const video = this.videoMonitor.video;
 
     if (!video) {
-      console.warn('[ContentScript] 無法找到 video 元素，1 秒後重試...');
+      this.setupRetryCount++;
+
+      if (this.setupRetryCount > this.MAX_SETUP_RETRIES) {
+        console.log(
+          '[ContentScript] 此頁面無 video 元素，停止字幕功能'
+        );
+        return; // 靜默退出，不再重試
+      }
+
+      console.log(
+        `[ContentScript] 等待 video 元素... (${this.setupRetryCount}/${this.MAX_SETUP_RETRIES})`
+      );
       setTimeout(() => this.setupPositioning(), 1000);
       return;
     }
+
+    // 找到 video，重置計數器
+    this.setupRetryCount = 0;
 
     console.log('[ContentScript] 找到 video 元素，readyState:', video.readyState);
 
@@ -480,8 +512,37 @@ class SubtitleOverlay {
   }
 }
 
-// 建立全域 Overlay 實例
-const overlay = new SubtitleOverlay();
+// 全域 Overlay 實例（延遲初始化）
+let overlay = null;
+
+/**
+ * 初始化字幕 Overlay（僅在啟用時執行）
+ */
+function enableSubtitles() {
+  if (overlay) {
+    console.log('[ContentScript] 字幕已啟用，跳過重複初始化');
+    return { success: true };
+  }
+
+  console.log('[ContentScript] 🟢 啟用字幕功能');
+  overlay = new SubtitleOverlay();
+  return { success: true };
+}
+
+/**
+ * 停用並清理字幕 Overlay
+ */
+function disableSubtitles() {
+  if (!overlay) {
+    console.log('[ContentScript] 字幕未啟用，無需停用');
+    return { success: true };
+  }
+
+  console.log('[ContentScript] 🔴 停用字幕功能');
+  overlay.destroy();
+  overlay = null;
+  return { success: true };
+}
 
 /**
  * 處理來自 Background 的訊息
@@ -492,24 +553,54 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[ContentScript] 收到訊息:', type);
 
   switch (type) {
+    case 'ENABLE_SUBTITLES':
+      // 啟用字幕功能
+      sendResponse(enableSubtitles());
+      break;
+
+    case 'DISABLE_SUBTITLES':
+      // 停用字幕功能
+      sendResponse(disableSubtitles());
+      break;
+
     case MessageTypes.SUBTITLE_UPDATE:
       // 新版：使用 addSubtitleData 儲存 segments 並根據時間顯示
+      if (!overlay) {
+        console.warn('[ContentScript] 字幕未啟用，忽略 SUBTITLE_UPDATE');
+        sendResponse({ success: false, error: '字幕未啟用' });
+        break;
+      }
       overlay.addSubtitleData(data);
       sendResponse({ success: true });
       break;
 
     case MessageTypes.CLEAR_SUBTITLES:
+      if (!overlay) {
+        console.warn('[ContentScript] 字幕未啟用，忽略 CLEAR_SUBTITLES');
+        sendResponse({ success: false, error: '字幕未啟用' });
+        break;
+      }
       overlay.clear();
       sendResponse({ success: true });
       break;
 
     case MessageTypes.STYLE_UPDATE:
+      if (!overlay) {
+        console.warn('[ContentScript] 字幕未啟用，忽略 STYLE_UPDATE');
+        sendResponse({ success: false, error: '字幕未啟用' });
+        break;
+      }
       // TODO: 更新字幕樣式
       sendResponse({ success: true });
       break;
 
     case 'GET_VIDEO_CURRENT_TIME':
       // 回傳影片當前時間給 Background Service Worker
+      if (!overlay) {
+        console.warn('[ContentScript] 字幕未啟用，無法取得影片時間');
+        sendResponse({ success: false, currentTime: 0 });
+        break;
+      }
       const currentTime = overlay.videoMonitor.getCurrentTime();
       console.log('[ContentScript] 回報影片時間:', currentTime.toFixed(2), 's');
       sendResponse({ success: true, currentTime });
