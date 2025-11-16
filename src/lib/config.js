@@ -189,9 +189,9 @@ export const DEEPGRAM_CONFIG = {
 
   // 模型設定
   MODEL: 'nova-2', // Nova-2 最新且支援中文
-  LANGUAGE: null, // 指定單一語言 (如 'en-US')。為 null 並啟用偵測時自動判斷
-  DETECT_LANGUAGE: true, // 啟用 Deepgram 內建語言自動偵測
-  LANGUAGE_HINTS: ['en', 'zh', 'zh-TW', 'zh-CN'], // 偵測優先語系
+  LANGUAGE: 'en-US', // 固定為英文（測試用，避免 detect_language 導致 WebSocket 400）
+  DETECT_LANGUAGE: false, // 暫時關閉自動偵測（會導致 WebSocket 400）
+  // LANGUAGE_HINTS: ['en', 'zh', 'zh-TW', 'zh-CN'], // 偵測優先語系（auto detect 時使用）
   MULTICHANNEL: false, // 強制視為單聲道，避免 channel_index=[0,1]
 
   // 音訊格式

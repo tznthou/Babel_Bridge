@@ -235,7 +235,9 @@ export class DeepgramStreamClient {
     console.log('[DeepgramStreamClient] 📡 WebSocket 已開啟');
     this.updateState(ConnectionState.CONNECTED);
 
-    this.sendConfigurationMessage();
+    // 注意：Deepgram WebSocket API 不接受 JSON configure 訊息
+    // 所有配置應通過 URL query parameters 傳遞（已在 buildWebSocketUrl() 完成）
+    // this.sendConfigurationMessage(); // ← 移除，會導致 SchemaError
   }
 
   /**
