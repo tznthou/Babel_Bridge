@@ -2,121 +2,287 @@
  * Popup UI 控制邏輯
  */
 import { APIKeyManager } from '../lib/api-key-manager.js';
+import { DeepgramKeyManager } from '../lib/deepgram-key-manager.js';
 import { MessageTypes } from '../lib/config.js';
 
-// DOM 元素
-const apiKeyInput = document.getElementById('api-key-input');
-const verifyBtn = document.getElementById('verify-btn');
-const apiKeyStatus = document.getElementById('api-key-status');
+// DOM 元素 - Tab 切換
+const tabs = document.querySelectorAll('.tab');
+const tabPanels = document.querySelectorAll('.tab-panel');
 
+// DOM 元素 - OpenAI
+const openaiApiKeyInput = document.getElementById('openai-api-key-input');
+const verifyOpenaiBtn = document.getElementById('verify-openai-btn');
+const openaiApiKeyStatus = document.getElementById('openai-api-key-status');
+const openaiKeyInfo = document.getElementById('openai-key-info');
+const openaiKeyMasked = document.getElementById('openai-key-masked');
+const openaiKeyVerified = document.getElementById('openai-key-verified');
+const removeOpenaiKeyBtn = document.getElementById('remove-openai-key');
+
+// DOM 元素 - Deepgram
+const deepgramApiKeyInput = document.getElementById('deepgram-api-key-input');
+const verifyDeepgramBtn = document.getElementById('verify-deepgram-btn');
+const deepgramApiKeyStatus = document.getElementById('deepgram-api-key-status');
+const deepgramKeyInfo = document.getElementById('deepgram-key-info');
+const deepgramKeyMasked = document.getElementById('deepgram-key-masked');
+const deepgramKeyVerified = document.getElementById('deepgram-key-verified');
+const deepgramProjectUuid = document.getElementById('deepgram-project-uuid');
+const deepgramScopes = document.getElementById('deepgram-scopes');
+const removeDeepgramKeyBtn = document.getElementById('remove-deepgram-key');
+
+// DOM 元素 - 字幕控制
 const enableBtn = document.getElementById('enable-btn');
 const disableBtn = document.getElementById('disable-btn');
 const statusText = document.getElementById('status-text');
 
+// DOM 元素 - 成本統計
 const whisperCostEl = document.getElementById('whisper-cost');
 const gptCostEl = document.getElementById('gpt-cost');
 const totalCostEl = document.getElementById('total-cost');
 const refreshStatsBtn = document.getElementById('refresh-stats-btn');
 
 /**
+ * Tab 切換功能
+ */
+function initTabs() {
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const tabName = tab.dataset.tab;
+
+      // 移除所有 active 狀態
+      tabs.forEach((t) => t.classList.remove('active'));
+      tabPanels.forEach((p) => p.classList.remove('active'));
+
+      // 添加 active 到當前 tab
+      tab.classList.add('active');
+      document.getElementById(`${tabName}-panel`).classList.add('active');
+    });
+  });
+}
+
+/**
  * 初始化 UI
  */
 async function init() {
-  try {
-    // 檢查是否已有加密儲存的 API Key
-    const apiKey = await APIKeyManager.getKey();
-    if (apiKey) {
-      // 不顯示完整 API Key，使用遮罩格式
-      const maskedKey = maskApiKey(apiKey);
-      apiKeyInput.value = maskedKey;
-      apiKeyInput.disabled = true; // 已設定時禁用輸入
-      showStatus(apiKeyStatus, '✓ 已設定並加密儲存 API Key', 'success');
+  // 初始化 Tab 切換
+  initTabs();
 
-      // 顯示「更換 API Key」按鈕提示
-      verifyBtn.textContent = '更換 API Key';
-    }
+  try {
+  // 載入 OpenAI API Key 狀態
+    await loadOpenaiKeyInfo();
+
+    // 載入 Deepgram API Key 狀態
+    await loadDeepgramKeyInfo();
+
+    // 載入成本統計
+    await loadCostStats();
   } catch (error) {
     console.error('初始化失敗:', error);
-    // 如果解密失敗，可能是瀏覽器指紋改變
-    if (error.code === 'CRYPTO_DECRYPTION_FAILED') {
+  }
+}
+
+/**
+ * 載入 OpenAI API Key 資訊
+ */
+async function loadOpenaiKeyInfo() {
+  try {
+    const hasKey = await APIKeyManager.hasKey();
+
+    if (hasKey) {
+      const apiKey = await APIKeyManager.getKey();
+      const maskedKey = APIKeyManager.maskKey(apiKey);
+
+      // 顯示 Key 資訊
+      openaiKeyMasked.textContent = maskedKey;
+      openaiKeyVerified.textContent = '已驗證並加密儲存';
+      openaiKeyInfo.classList.remove('hidden');
+
+      // 隱藏輸入框
+      openaiApiKeyInput.parentElement.style.display = 'none';
+      openaiApiKeyStatus.textContent = '';
+    } else {
+      // 顯示輸入框
+      openaiKeyInfo.classList.add('hidden');
+      openaiApiKeyInput.parentElement.style.display = 'flex';
+    }
+  } catch (error) {
+    console.error('[Popup] 載入 OpenAI Key 失敗:', error);
+
+    if (
+      error.code === 'CRYPTO_DECRYPTION_FAILED' ||
+      error.code === 'API_KEY_MISSING'
+    ) {
       showStatus(
-        apiKeyStatus,
-        '⚠️ API Key 解密失敗，請重新輸入（可能是更換了瀏覽器或電腦）',
+        openaiApiKeyStatus,
+        '⚠️ API Key 解密失敗，請重新設定',
         'error'
       );
+      openaiKeyInfo.classList.add('hidden');
+      openaiApiKeyInput.parentElement.style.display = 'flex';
     }
   }
-
-  // 載入成本統計
-  await loadCostStats();
 }
 
 /**
- * 遮罩 API Key（只顯示前後部分）
- * @param {string} apiKey - 完整的 API Key
- * @returns {string} 遮罩後的 API Key
+ * 載入 Deepgram API Key 資訊
  */
-function maskApiKey(apiKey) {
-  if (!apiKey || apiKey.length < 20) return '****';
+async function loadDeepgramKeyInfo() {
+  try {
+    const info = await DeepgramKeyManager.getKeyInfo();
 
-  const prefix = apiKey.substring(0, 10); // 顯示前10個字元 (如 sk-proj-ab)
-  const suffix = apiKey.substring(apiKey.length - 4); // 顯示最後4個字元
-  return `${prefix}${'*'.repeat(20)}${suffix}`;
+    if (info.hasKey) {
+      const apiKey = await DeepgramKeyManager.getKey();
+      const maskedKey = DeepgramKeyManager.maskKey(apiKey);
+
+      // 顯示 Key 資訊
+      deepgramKeyMasked.textContent = maskedKey;
+
+      const verifiedDate = new Date(info.verifiedAt);
+      deepgramKeyVerified.textContent = `已驗證 (${verifiedDate.toLocaleDateString()})`;
+
+      deepgramProjectUuid.textContent = info.projectUuid || 'N/A';
+      deepgramScopes.textContent = info.scopes.join(', ') || 'N/A';
+
+      deepgramKeyInfo.classList.remove('hidden');
+
+      // 隱藏輸入框
+      deepgramApiKeyInput.parentElement.style.display = 'none';
+      deepgramApiKeyStatus.textContent = '';
+    } else {
+      // 顯示輸入框
+      deepgramKeyInfo.classList.add('hidden');
+      deepgramApiKeyInput.parentElement.style.display = 'flex';
+    }
+  } catch (error) {
+    console.error('[Popup] 載入 Deepgram Key 失敗:', error);
+
+    if (
+      error.code === 'DEEPGRAM_API_KEY_DECRYPT_FAILED' ||
+      error.code === 'DEEPGRAM_API_KEY_NOT_FOUND'
+    ) {
+      showStatus(
+        deepgramApiKeyStatus,
+        '⚠️ API Key 解密失敗，請重新設定',
+        'error'
+      );
+      deepgramKeyInfo.classList.add('hidden');
+      deepgramApiKeyInput.parentElement.style.display = 'flex';
+    }
+  }
 }
 
 /**
- * 驗證 API Key
+ * 驗證 OpenAI API Key
  */
-async function verifyApiKey() {
-  // 如果當前是「更換 API Key」模式，先清除舊的並啟用輸入
-  if (verifyBtn.textContent === '更換 API Key') {
-    await APIKeyManager.removeKey();
-    apiKeyInput.value = '';
-    apiKeyInput.disabled = false;
-    apiKeyInput.focus();
-    verifyBtn.textContent = '驗證並儲存';
-    showStatus(apiKeyStatus, '請輸入新的 API Key', '');
-    return;
-  }
-
-  const apiKey = apiKeyInput.value.trim();
-
-  // 檢查是否為遮罩的 key（避免用戶誤操作）
-  if (apiKey.includes('*')) {
-    showStatus(apiKeyStatus, '請輸入完整的 API Key', 'error');
-    return;
-  }
+async function verifyOpenaiKey() {
+  const apiKey = openaiApiKeyInput.value.trim();
 
   if (!apiKey) {
-    showStatus(apiKeyStatus, '請輸入 API Key', 'error');
+    showStatus(openaiApiKeyStatus, '請輸入 OpenAI API Key', 'error');
     return;
   }
 
-  verifyBtn.disabled = true;
-  verifyBtn.textContent = '驗證中...';
-  showStatus(apiKeyStatus, '正在驗證並加密 API Key...', '');
+  verifyOpenaiBtn.disabled = true;
+  verifyOpenaiBtn.textContent = '驗證中...';
+  showStatus(openaiApiKeyStatus, '正在驗證並加密 API Key...', '');
 
   try {
     const result = await APIKeyManager.verifyAndSave(apiKey);
 
-    // 驗證成功後，顯示遮罩的 key
-    const maskedKey = maskApiKey(apiKey);
-    apiKeyInput.value = maskedKey;
-    apiKeyInput.disabled = true;
-
     showStatus(
-      apiKeyStatus,
+      openaiApiKeyStatus,
       `✓ ${result.keyType} 驗證成功並已加密儲存 (可用模型: ${result.modelsCount})`,
       'success'
     );
 
-    verifyBtn.textContent = '更換 API Key';
+    // 重新載入 Key 資訊
+    await loadOpenaiKeyInfo();
+
+    // 清空輸入框
+    openaiApiKeyInput.value = '';
   } catch (error) {
-    console.error('API Key 驗證失敗:', error);
-    showStatus(apiKeyStatus, `✗ ${error.message}`, 'error');
-    verifyBtn.textContent = '驗證並儲存';
+    console.error('[Popup] OpenAI Key 驗證失敗:', error);
+    showStatus(openaiApiKeyStatus, `✗ ${error.message}`, 'error');
   } finally {
-    verifyBtn.disabled = false;
+    verifyOpenaiBtn.disabled = false;
+    verifyOpenaiBtn.textContent = '驗證並儲存';
+  }
+}
+
+/**
+ * 驗證 Deepgram API Key
+ */
+async function verifyDeepgramKey() {
+  const apiKey = deepgramApiKeyInput.value.trim();
+
+  if (!apiKey) {
+    showStatus(deepgramApiKeyStatus, '請輸入 Deepgram API Key', 'error');
+    return;
+  }
+
+  verifyDeepgramBtn.disabled = true;
+  verifyDeepgramBtn.textContent = '驗證中...';
+  showStatus(deepgramApiKeyStatus, '正在驗證並加密 API Key...', '');
+
+  try {
+    const result = await DeepgramKeyManager.verifyAndSave(apiKey);
+
+    showStatus(
+      deepgramApiKeyStatus,
+      `✓ 驗證成功！Project: ${result.projectUuid}`,
+      'success'
+    );
+
+    // 重新載入 Key 資訊
+    await loadDeepgramKeyInfo();
+
+    // 清空輸入框
+    deepgramApiKeyInput.value = '';
+  } catch (error) {
+    console.error('[Popup] Deepgram Key 驗證失敗:', error);
+    showStatus(deepgramApiKeyStatus, `✗ ${error.message}`, 'error');
+  } finally {
+    verifyDeepgramBtn.disabled = false;
+    verifyDeepgramBtn.textContent = '驗證並儲存';
+  }
+}
+
+/**
+ * 移除 OpenAI API Key
+ */
+async function removeOpenaiKey() {
+  if (!confirm('確定要移除 OpenAI API Key 嗎？')) {
+    return;
+  }
+
+  try {
+    await APIKeyManager.removeKey();
+    showStatus(openaiApiKeyStatus, '✓ API Key 已移除', 'success');
+
+    // 重新載入 UI
+    await loadOpenaiKeyInfo();
+  } catch (error) {
+    console.error('[Popup] 移除 OpenAI Key 失敗:', error);
+    showStatus(openaiApiKeyStatus, `✗ ${error.message}`, 'error');
+  }
+}
+
+/**
+ * 移除 Deepgram API Key
+ */
+async function removeDeepgramKey() {
+  if (!confirm('確定要移除 Deepgram API Key 嗎？')) {
+    return;
+  }
+
+  try {
+    await DeepgramKeyManager.removeKey();
+    showStatus(deepgramApiKeyStatus, '✓ API Key 已移除', 'success');
+
+    // 重新載入 UI
+    await loadDeepgramKeyInfo();
+  } catch (error) {
+    console.error('[Popup] 移除 Deepgram Key 失敗:', error);
+    showStatus(deepgramApiKeyStatus, `✗ ${error.message}`, 'error');
   }
 }
 
@@ -212,10 +378,19 @@ function showStatus(element, message, type) {
   element.className = `status ${type}`;
 }
 
-// 事件監聽
-verifyBtn.addEventListener('click', verifyApiKey);
+// 事件監聽 - OpenAI
+verifyOpenaiBtn.addEventListener('click', verifyOpenaiKey);
+removeOpenaiKeyBtn.addEventListener('click', removeOpenaiKey);
+
+// 事件監聽 - Deepgram
+verifyDeepgramBtn.addEventListener('click', verifyDeepgramKey);
+removeDeepgramKeyBtn.addEventListener('click', removeDeepgramKey);
+
+// 事件監聽 - 字幕控制
 enableBtn.addEventListener('click', enableSubtitles);
 disableBtn.addEventListener('click', disableSubtitles);
+
+// 事件監聽 - 成本統計
 refreshStatsBtn.addEventListener('click', loadCostStats);
 
 // 初始化
