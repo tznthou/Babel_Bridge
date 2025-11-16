@@ -69,12 +69,22 @@ export class DeepgramKeyManager {
     const validatedKey = this.validateFormat(apiKey);
 
     try {
+      console.log('[DeepgramKeyManager] 🔑 驗證 API Key...', {
+        url: DEEPGRAM_CONFIG.AUTH_URL,
+        keyPrefix: validatedKey.substring(0, 8) + '...',
+      });
+
       const response = await fetch(DEEPGRAM_CONFIG.AUTH_URL, {
-        method: 'POST',
+        method: 'GET', // 改用 GET（文檔推薦）
         headers: {
           Authorization: `Token ${validatedKey}`,
-          'Content-Type': 'application/json',
         },
+      });
+
+      console.log('[DeepgramKeyManager] 📡 API 回應:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
       });
 
       // 401: Invalid credentials
@@ -111,9 +121,14 @@ export class DeepgramKeyManager {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        console.error('[DeepgramKeyManager] ✗ API 驗證失敗:', {
+          status: response.status,
+          errorData,
+        });
+
         throw new BabelBridgeError(
           ErrorCodes.UNKNOWN_ERROR,
-          `Deepgram API 驗證失敗: ${errorData.message || response.statusText}`
+          `Deepgram API 驗證失敗 (${response.status}): ${errorData.message || response.statusText}`
         );
       }
 
