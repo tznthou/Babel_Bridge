@@ -16,17 +16,55 @@
       <main>
         <!-- API Key 設定區 -->
         <section id="api-key-section" class="section">
-          <h2>OpenAI API Key</h2>
-          <div class="input-group">
-            <input
-              type="password"
-              id="api-key-input"
-              placeholder="sk-..."
-              autocomplete="off"
-            />
-            <button id="verify-btn" class="btn btn-primary">驗證並儲存</button>
+          <h2>API Key 設定</h2>
+
+          <!-- Tab 切換 -->
+          <div class="tabs">
+            <button class="tab active" data-tab="openai">OpenAI</button>
+            <button class="tab" data-tab="deepgram">Deepgram</button>
           </div>
-          <p id="api-key-status" class="status"></p>
+
+          <!-- OpenAI Tab -->
+          <div id="openai-panel" class="tab-panel active">
+            <div class="input-group">
+              <input
+                type="password"
+                id="openai-api-key-input"
+                placeholder="sk-proj-..."
+                autocomplete="off"
+              />
+              <button id="verify-openai-btn" class="btn btn-primary">驗證並儲存</button>
+            </div>
+            <p id="openai-api-key-status" class="status"></p>
+            <div id="openai-key-info" class="key-info hidden">
+              <p>✓ API Key 已設定</p>
+              <p class="key-masked" id="openai-key-masked"></p>
+              <p class="key-verified" id="openai-key-verified"></p>
+              <button id="remove-openai-key" class="btn btn-small btn-danger">移除 API Key</button>
+            </div>
+          </div>
+
+          <!-- Deepgram Tab -->
+          <div id="deepgram-panel" class="tab-panel">
+            <div class="input-group">
+              <input
+                type="password"
+                id="deepgram-api-key-input"
+                placeholder="輸入 Deepgram API Key"
+                autocomplete="off"
+              />
+              <button id="verify-deepgram-btn" class="btn btn-primary">驗證並儲存</button>
+            </div>
+            <p id="deepgram-api-key-status" class="status"></p>
+            <div id="deepgram-key-info" class="key-info hidden">
+              <p>✓ API Key 已設定</p>
+              <p class="key-masked" id="deepgram-key-masked"></p>
+              <p class="key-verified" id="deepgram-key-verified"></p>
+              <p class="key-meta">Project: <span id="deepgram-project-uuid"></span></p>
+              <p class="key-meta">權限: <span id="deepgram-scopes"></span></p>
+              <button id="remove-deepgram-key" class="btn btn-small btn-danger">移除 API Key</button>
+            </div>
+          </div>
         </section>
 
         <!-- 控制區 -->

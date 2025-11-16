@@ -197,3 +197,96 @@ footer {
   font-size: 11px;
   color: #95a5a6;
 }
+
+/* ==================== Tab 切換樣式 ==================== */
+
+.tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 16px;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.tab {
+  flex: 1;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #7f8c8d;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: -2px;
+}
+
+.tab:hover {
+  color: var(--primary-color);
+  background: rgba(74, 144, 226, 0.05);
+}
+
+.tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+  font-weight: 600;
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ==================== API Key 資訊樣式 ==================== */
+
+.key-info {
+  margin-top: 12px;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.key-info.hidden {
+  display: none;
+}
+
+.key-info p {
+  margin: 4px 0;
+}
+
+.key-masked {
+  font-family: 'Courier New', monospace;
+  color: #7f8c8d;
+  font-size: 12px;
+}
+
+.key-verified {
+  color: #27ae60;
+  font-size: 11px;
+}
+
+.key-meta {
+  font-size: 11px;
+  color: #7f8c8d;
+}
+
+.key-meta span {
+  font-weight: 600;
+  color: var(--text-color);
+}

@@ -55,7 +55,7 @@ class SubtitleService {
   async enable(tabId) {
     if (this.isActive) {
       console.warn('[SubtitleService] 服務已啟用');
-      return;
+      return { success: true };
     }
 
     try {
@@ -65,6 +65,20 @@ class SubtitleService {
       }
 
       this.currentTabId = tabId;
+
+      // 通知 Content Script 啟用字幕（檢查頁面是否有 video）
+      const response = await chrome.tabs.sendMessage(tabId, {
+        type: 'ENABLE_SUBTITLES'
+      });
+
+      // 如果 Content Script 回報沒有 video，立即回傳錯誤
+      if (!response.success) {
+        console.warn('[SubtitleService] Content Script 回報:', response.error);
+        return {
+          success: false,
+          error: response.error || '無法啟用字幕'
+        };
+      }
 
       // 啟動音訊擷取 (Offscreen Document 會自動處理切塊和編碼)
       this.audioCapture = new AudioCapture();
@@ -77,7 +91,12 @@ class SubtitleService {
     } catch (error) {
       await ErrorHandler.handle(error, { operation: 'enable_service', tabId });
       this.cleanup();
-      throw error;
+
+      // 將錯誤訊息傳遞回 Popup
+      return {
+        success: false,
+        error: error.message || '啟用字幕失敗'
+      };
     }
   }
 
@@ -87,6 +106,20 @@ class SubtitleService {
   async disable() {
     if (!this.isActive) {
       return;
+    }
+
+    const tabId = this.currentTabId;
+
+    // 通知 Content Script 停用字幕
+    if (tabId) {
+      try {
+        await chrome.tabs.sendMessage(tabId, {
+          type: 'DISABLE_SUBTITLES'
+        });
+      } catch (error) {
+        // Content Script 可能已卸載，忽略錯誤
+        console.warn('[SubtitleService] 無法通知 Content Script 停用:', error.message);
+      }
     }
 
     this.cleanup();

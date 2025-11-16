@@ -218,6 +218,15 @@ export class APIKeyManager {
   }
 
   /**
+   * 檢查是否已儲存 API Key
+   * @returns {Promise<boolean>} 是否已儲存
+   */
+  static async hasKey() {
+    const result = await chrome.storage.local.get(STORAGE_KEYS.API_KEY_ENCRYPTED);
+    return !!result[STORAGE_KEYS.API_KEY_ENCRYPTED];
+  }
+
+  /**
    * 取得已儲存的 API Key（自動解密）
    * @returns {Promise<string|null>} 解密後的 API Key，若無則返回 null
    */
@@ -245,6 +254,27 @@ export class APIKeyManager {
         { originalError: error }
       );
     }
+  }
+
+  /**
+   * 格式化 API Key 顯示（遮罩處理）
+   *
+   * 顯示前 10 字元和後 4 字元，中間用 * 遮罩
+   * 例如：sk-proj-ab************xyz1
+   *
+   * @param {string} apiKey - API Key
+   * @returns {string} 遮罩後的 Key
+   */
+  static maskKey(apiKey) {
+    if (!apiKey || apiKey.length < 20) {
+      return '****';
+    }
+
+    const prefix = apiKey.substring(0, 10);
+    const suffix = apiKey.substring(apiKey.length - 4);
+    const middleLength = Math.max(apiKey.length - 14, 12);
+
+    return `${prefix}${'*'.repeat(middleLength)}${suffix}`;
   }
 
   /**
