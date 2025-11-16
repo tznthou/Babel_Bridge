@@ -47,16 +47,28 @@ function initTabs() {
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
       const tabName = tab.dataset.tab;
-
-      // 移除所有 active 狀態
-      tabs.forEach((t) => t.classList.remove('active'));
-      tabPanels.forEach((p) => p.classList.remove('active'));
-
-      // 添加 active 到當前 tab
-      tab.classList.add('active');
-      document.getElementById(`${tabName}-panel`).classList.add('active');
+      switchToTab(tabName);
     });
   });
+}
+
+/**
+ * 切換到指定 Tab
+ * @param {string} tabName - Tab 名稱 ('openai' 或 'deepgram')
+ */
+function switchToTab(tabName) {
+  // 移除所有 active 狀態
+  tabs.forEach((t) => t.classList.remove('active'));
+  tabPanels.forEach((p) => p.classList.remove('active'));
+
+  // 添加 active 到指定 tab
+  const targetTab = document.querySelector(`[data-tab="${tabName}"]`);
+  const targetPanel = document.getElementById(`${tabName}-panel`);
+
+  if (targetTab && targetPanel) {
+    targetTab.classList.add('active');
+    targetPanel.classList.add('active');
+  }
 }
 
 /**
@@ -199,6 +211,9 @@ async function verifyOpenaiKey() {
 
     // 清空輸入框
     openaiApiKeyInput.value = '';
+
+    // 驗證成功後自動切換到 OpenAI Tab
+    switchToTab('openai');
   } catch (error) {
     console.error('[Popup] OpenAI Key 驗證失敗:', error);
     showStatus(openaiApiKeyStatus, `✗ ${error.message}`, 'error');
@@ -237,6 +252,9 @@ async function verifyDeepgramKey() {
 
     // 清空輸入框
     deepgramApiKeyInput.value = '';
+
+    // 驗證成功後自動切換到 Deepgram Tab
+    switchToTab('deepgram');
   } catch (error) {
     console.error('[Popup] Deepgram Key 驗證失敗:', error);
     showStatus(deepgramApiKeyStatus, `✗ ${error.message}`, 'error');
@@ -313,10 +331,16 @@ async function enableSubtitles() {
       enableBtn.disabled = true;
       disableBtn.disabled = false;
     } else {
+      // 友善的錯誤提示
       throw new Error(response.error || '啟用失敗');
     }
   } catch (error) {
-    statusText.textContent = `✗ ${error.message}`;
+    // 針對「沒有影片」的錯誤，顯示更友善的訊息
+    const errorMessage = error.message.includes('沒有影片')
+      ? '⚠️ ' + error.message
+      : `✗ ${error.message}`;
+
+    statusText.textContent = errorMessage;
     statusText.className = 'status error';
     enableBtn.disabled = false;
   }

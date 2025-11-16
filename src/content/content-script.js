@@ -156,12 +156,11 @@ class VideoMonitor {
  */
 class SubtitleOverlay {
   constructor() {
-    this.setupRetryCount = 0; // 追蹤 setupPositioning 重試次數
-    this.MAX_SETUP_RETRIES = 5; // 最多重試 5 次（5 秒）
     this.container = null;
     this.segments = []; // 儲存所有接收到的 segments（已是影片絕對時間）
     this.currentSegmentIndex = -1; // 當前顯示的 segment 索引
     this.videoMonitor = null;
+    this.resizeObserver = null;
     this.init();
   }
 
@@ -399,29 +398,17 @@ class SubtitleOverlay {
 
   /**
    * 設定動態定位 - 監聽影片尺寸與全螢幕變化
+   *
+   * ⚠️ 前提：enableSubtitles() 已確保頁面有 video 元素
    */
   setupPositioning() {
     const video = this.videoMonitor.video;
 
+    // 防禦性檢查（理論上不應該發生，因為 enableSubtitles 已檢查過）
     if (!video) {
-      this.setupRetryCount++;
-
-      if (this.setupRetryCount > this.MAX_SETUP_RETRIES) {
-        console.log(
-          '[ContentScript] 此頁面無 video 元素，停止字幕功能'
-        );
-        return; // 靜默退出，不再重試
-      }
-
-      console.log(
-        `[ContentScript] 等待 video 元素... (${this.setupRetryCount}/${this.MAX_SETUP_RETRIES})`
-      );
-      setTimeout(() => this.setupPositioning(), 1000);
+      console.error('[ContentScript] ❌ setupPositioning: 無 video 元素（不應該發生！）');
       return;
     }
-
-    // 找到 video，重置計數器
-    this.setupRetryCount = 0;
 
     console.log('[ContentScript] 找到 video 元素，readyState:', video.readyState);
 
@@ -522,6 +509,16 @@ function enableSubtitles() {
   if (overlay) {
     console.log('[ContentScript] 字幕已啟用，跳過重複初始化');
     return { success: true };
+  }
+
+  // ✅ 啟用前先檢查頁面是否有 video 元素
+  const video = document.querySelector('video');
+  if (!video) {
+    console.warn('[ContentScript] ⚠️ 此頁面沒有影片元素，無法啟用字幕');
+    return {
+      success: false,
+      error: '此頁面沒有影片，請在 YouTube、Netflix 等影片網站使用'
+    };
   }
 
   console.log('[ContentScript] 🟢 啟用字幕功能');
