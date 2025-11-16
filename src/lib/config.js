@@ -180,12 +180,63 @@ export const UI_CONFIG = {
 };
 
 /**
+ * Deepgram Streaming API 配置
+ */
+export const DEEPGRAM_CONFIG = {
+  // API 端點
+  AUTH_URL: 'https://api.deepgram.com/v1/auth/token',
+  WEBSOCKET_URL: 'wss://api.deepgram.com/v1/listen',
+
+  // 模型設定
+  MODEL: 'nova-2', // Nova-2 最新且支援中文
+  LANGUAGE: 'zh-TW', // 或 'zh-CN'
+
+  // 音訊格式
+  ENCODING: 'linear16',
+  SAMPLE_RATE: 16000,
+  CHANNELS: 1,
+
+  // Streaming 設定
+  INTERIM_RESULTS: true, // 啟用即時字幕
+  PUNCTUATE: true, // 自動標點
+  SMART_FORMAT: true, // 智能格式化
+  ENDPOINTING: 300, // 300ms 靜音視為句子結束
+
+  // 連線管理
+  KEEPALIVE_INTERVAL: 5000, // 5 秒發送 KeepAlive
+  RECONNECT_MAX_RETRIES: 5, // 最多重連 5 次
+  RECONNECT_DELAY: 1000, // 重連延遲 1 秒
+
+  // 成本計算（Nova-2 定價）
+  COST_PER_MINUTE: 0.0043, // $0.0043/分鐘
+};
+
+/**
+ * AudioWorklet PCM 處理配置
+ */
+export const AUDIO_WORKLET_CONFIG = {
+  FRAME_SIZE_MS: 20, // 20ms per frame
+  INPUT_SAMPLE_RATE: 48000, // 瀏覽器預設
+  OUTPUT_SAMPLE_RATE: 16000, // Deepgram 要求
+  CHANNELS: 1, // Mono
+};
+
+/**
  * 儲存鍵名
  */
 export const STORAGE_KEYS = {
+  // OpenAI
   API_KEY_ENCRYPTED: 'openai_api_key_encrypted', // 加密後的 API Key (AES-GCM)
   API_KEY_TYPE: 'openai_api_key_type', // 密鑰類型 (Standard/Project/Admin/Org)
   API_KEY_VERIFIED_AT: 'openai_api_key_verified_at', // 驗證時間戳
+
+  // Deepgram
+  DEEPGRAM_API_KEY_ENCRYPTED: 'deepgram_api_key_encrypted',
+  DEEPGRAM_API_KEY_VERIFIED_AT: 'deepgram_api_key_verified_at',
+  DEEPGRAM_API_KEY_SCOPES: 'deepgram_api_key_scopes',
+  DEEPGRAM_PROJECT_UUID: 'deepgram_project_uuid',
+
+  // 通用
   USER_SETTINGS: 'user_settings',
   COST_TRACKING: 'cost_tracking',
   SUBTITLE_CACHE: 'subtitle_cache',
