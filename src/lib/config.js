@@ -189,7 +189,10 @@ export const DEEPGRAM_CONFIG = {
 
   // 模型設定
   MODEL: 'nova-2', // Nova-2 最新且支援中文
-  LANGUAGE: 'zh-TW', // 或 'zh-CN'
+  LANGUAGE: null, // 指定單一語言 (如 'en-US')。為 null 並啟用偵測時自動判斷
+  DETECT_LANGUAGE: true, // 啟用 Deepgram 內建語言自動偵測
+  LANGUAGE_HINTS: ['en', 'zh', 'zh-TW', 'zh-CN'], // 偵測優先語系
+  MULTICHANNEL: false, // 強制視為單聲道，避免 channel_index=[0,1]
 
   // 音訊格式
   ENCODING: 'linear16',

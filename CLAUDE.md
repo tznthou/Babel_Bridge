@@ -318,6 +318,44 @@ refactor: simplify error handling
 
 **預期總延遲**: 5.5-7 秒（MediaRecorder 3s + Whisper 2-3s + 網路 0.5-1s = **雲端架構物理極限**）
 
+## Deepgram Streaming（Phase 2 - 2025-11）
+
+> Whisper 管線持續存在，但 2025-11-16 起新增 Deepgram 即時串流實驗分支，檔案在 `src/background/deepgram-stream-client.js`、`src/background/service-worker.js`、`src/offscreen/`。
+
+### 流程總覽
+1. `AudioCapture.start(tabId)` 取得 `chrome.tabCapture.getMediaStreamId()` → Offscreen Document。
+2. Offscreen Document 透過 `getUserMedia({ audio: { chromeMediaSource: 'tab' } })` 取得 MediaStream → AudioWorklet (`pcm-processor.js`) 轉 48kHz → 16kHz PCM。
+3. 轉出的每個 20ms frame 以 Array<Int16> 發回 Service Worker → `DeepgramStreamClient.sendAudio()` (WebSocket)。
+4. `DeepgramStreamClient.handleMessage()` 接收即時 `Results`、解析 `interim/final`，再回傳給 SubtitleService → Content Script live overlay。
+
+### Tab 靜音根本原因與修復
+- Chrome 目前會在 tab 被 `tabCapture` 擷取音訊時強制靜音該 tab（Chromium issue 387750）。結果：
+  - 使用者聽不到影片音訊。
+  - Deepgram 收到的 PCM 幾乎全為 0 → `transcript === ''`，字幕永遠缺席。
+- **修復**：在 Offscreen Document 中建立隱藏 `<audio>` 元素（`startMirrorAudioPlayback()`），將擷取到的 `MediaStream` 重新播放（`audio.srcObject = mediaStream; audio.play()`）。這樣音訊會從 Offscreen Document 輸出到系統裝置，既維持使用者聆聽，也為 Deepgram 提供非靜音樣本。
+- 停止串流時記得 `stopMirrorAudioPlayback()`，釋放資源避免多重輸出。
+
+### 語言自動偵測
+- `DEEPGRAM_CONFIG` 預設 `DETECT_LANGUAGE = true`、`LANGUAGE = null`，連線時會加上 `detect_language=true` 與 `languages=en,zh,zh-TW,zh-CN` hints。
+- 若需要強制語言（例如只做英文字幕），把 `LANGUAGE` 設為 `en-US` 並將 `DETECT_LANGUAGE` 設為 `false`。
+- 這樣使用者不需在英文／中文影片間手動切換設定，仍可保留覆寫的彈性。
+- 另外 `DeepgramStreamClient` 在 WebSocket 建立後會立即送出 `type: 'configure'` 訊息，把 encoding/sampleRate/channels/語言設定再傳一次，避免 query 參數被忽略；若未看到 `[DeepgramStreamClient] ⚙️ 已傳送設定訊息` log，代表連線尚未成功或設定未生效。
+
+### Deepgram 設定與診斷
+- WebSocket URL → `wss://api.deepgram.com/v1/listen?model=nova-2&language=zh-TW&encoding=linear16&sample_rate=16000...`
+- API Key 透過 WebSocket subprotocol 傳遞（`['token', apiKey]`）。
+- `handleMessage()` 針對 `Results` 會 dump 完整 payload。
+- `handleTranscriptResult()` 在每個 early return 處 log：缺 channel/alternatives 會輸出 `❌`，空 transcript 則輸出 `⚠️`。
+- 如果只看到 `[DeepgramStreamClient] 📨 收到訊息: Results` 而無 `⏳ Interim/✅ Final`，請先檢查：
+  1. Offscreen log 是否出現 `鏡射音訊播放啟動`。
+  2. Deepgram log 是否顯示 `空字幕 transcript`。
+  3. 測試影片語言是否與 `DEEPGRAM_CONFIG.LANGUAGE` 一致（預設 `zh-TW`）。
+
+### 開發建議
+- 開始串流前務必確認 `DeepgramKeyManager` 已儲存密鑰，否則 `init()` 會丟 `DEEPGRAM_API_KEY_NOT_FOUND`。
+- 如需改語言，修改 `src/lib/config.js` 中 `DEEPGRAM_CONFIG.LANGUAGE`，並重新載入 extension。
+- 若仍出現靜音，可在 Offscreen Document 中 `console.log(mediaStream.getAudioTracks()[0].muted)` 檢查 track 狀態，必要時 `track.enabled = true`。
+
 未來若需更低延遲，需改用本地 Whisper 模型（transformers.js），可達 2-3 秒。
 
 ### 字幕未顯示或不同步

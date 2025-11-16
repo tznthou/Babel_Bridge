@@ -83,6 +83,10 @@ export class DeepgramStreamClient {
         );
       }
 
+      // Debug: 檢查 API Key 格式
+      console.log('[DeepgramStreamClient] 🔑 API Key 長度:', this.apiKey.length);
+      console.log('[DeepgramStreamClient] 🔑 API Key 前綴:', this.apiKey.substring(0, 10) + '...');
+
       // 建立 WebSocket 連線
       await this.connect();
 
@@ -107,17 +111,23 @@ export class DeepgramStreamClient {
     this.updateState(ConnectionState.CONNECTING);
 
     try {
-      // 建構 WebSocket URL（附帶參數）
+      // 建構 WebSocket URL（不含 token）
       const wsUrl = this.buildWebSocketUrl();
+
+      const languageInfo = DEEPGRAM_CONFIG.DETECT_LANGUAGE
+        ? `auto (${(DEEPGRAM_CONFIG.LANGUAGE_HINTS || []).join(', ') || 'any'})`
+        : DEEPGRAM_CONFIG.LANGUAGE;
 
       console.log('[DeepgramStreamClient] 🔗 連線到 Deepgram...', {
         url: DEEPGRAM_CONFIG.WEBSOCKET_URL,
         model: DEEPGRAM_CONFIG.MODEL,
-        language: DEEPGRAM_CONFIG.LANGUAGE,
+        language: languageInfo,
       });
 
-      // 建立 WebSocket
-      this.websocket = new WebSocket(wsUrl);
+      // 建立 WebSocket（使用 subprotocols 傳遞 API key）
+      // 瀏覽器 WebSocket 不支援 custom headers，必須使用 protocols
+      this.websocket = new WebSocket(wsUrl, ['token', this.apiKey]);
+      this.websocket.binaryType = 'arraybuffer';
 
       // 設定事件監聽器
       this.setupWebSocketHandlers();
@@ -125,8 +135,8 @@ export class DeepgramStreamClient {
       // 等待連線成功
       await this.waitForConnection();
 
-      // 啟動 KeepAlive
-      this.startKeepAlive();
+      // Deepgram 音訊串流不需要 KeepAlive（持續的 audio data 本身就是 keep-alive）
+      // 移除 startKeepAlive() 以避免發送 text message 導致 SchemaError
 
       // 重置重連計數
       this.reconnectAttempts = 0;
@@ -153,7 +163,6 @@ export class DeepgramStreamClient {
   buildWebSocketUrl() {
     const params = new URLSearchParams({
       model: DEEPGRAM_CONFIG.MODEL,
-      language: DEEPGRAM_CONFIG.LANGUAGE,
       encoding: DEEPGRAM_CONFIG.ENCODING,
       sample_rate: DEEPGRAM_CONFIG.SAMPLE_RATE.toString(),
       channels: DEEPGRAM_CONFIG.CHANNELS.toString(),
@@ -161,9 +170,24 @@ export class DeepgramStreamClient {
       punctuate: DEEPGRAM_CONFIG.PUNCTUATE.toString(),
       smart_format: DEEPGRAM_CONFIG.SMART_FORMAT.toString(),
       endpointing: DEEPGRAM_CONFIG.ENDPOINTING.toString(),
+      multichannel: DEEPGRAM_CONFIG.MULTICHANNEL ? 'true' : 'false',
     });
 
-    return `${DEEPGRAM_CONFIG.WEBSOCKET_URL}?${params.toString()}`;
+    if (DEEPGRAM_CONFIG.DETECT_LANGUAGE) {
+      params.set('detect_language', 'true');
+      if (Array.isArray(DEEPGRAM_CONFIG.LANGUAGE_HINTS) && DEEPGRAM_CONFIG.LANGUAGE_HINTS.length > 0) {
+        params.set('languages', DEEPGRAM_CONFIG.LANGUAGE_HINTS.join(','));
+      }
+    } else if (DEEPGRAM_CONFIG.LANGUAGE) {
+      params.set('language', DEEPGRAM_CONFIG.LANGUAGE);
+    }
+
+    // 注意：不在 URL 中包含 token（改用 WebSocket subprotocols）
+    const wsUrl = `${DEEPGRAM_CONFIG.WEBSOCKET_URL}?${params.toString()}`;
+    
+    console.log('[DeepgramStreamClient] 🔗 WebSocket URL:', wsUrl);
+    
+    return wsUrl;
   }
 
   /**
@@ -211,13 +235,7 @@ export class DeepgramStreamClient {
     console.log('[DeepgramStreamClient] 📡 WebSocket 已開啟');
     this.updateState(ConnectionState.CONNECTED);
 
-    // 發送 API Key（Deepgram 要求在連線後發送）
-    this.websocket.send(
-      JSON.stringify({
-        type: 'Authenticate',
-        token: this.apiKey,
-      })
-    );
+    this.sendConfigurationMessage();
   }
 
   /**
@@ -229,6 +247,17 @@ export class DeepgramStreamClient {
       const data = JSON.parse(event.data);
 
       console.log('[DeepgramStreamClient] 📨 收到訊息:', data.type);
+
+      if (data.type === 'Results') {
+        try {
+          console.log(
+            '[DeepgramStreamClient] 🔍 完整 Results:',
+            JSON.stringify(data, null, 2)
+          );
+        } catch (stringifyError) {
+          console.warn('[DeepgramStreamClient] ⚠️ Results stringify 失敗:', stringifyError);
+        }
+      }
 
       switch (data.type) {
         case 'Results':
@@ -269,7 +298,13 @@ export class DeepgramStreamClient {
    * @private
    */
   handleTranscriptResult(data) {
-    if (!data.channel || !data.channel.alternatives || data.channel.alternatives.length === 0) {
+    if (!data.channel) {
+      console.warn('[DeepgramStreamClient] ❌ 無 channel 結構，忽略結果');
+      return;
+    }
+
+    if (!data.channel.alternatives || data.channel.alternatives.length === 0) {
+      console.warn('[DeepgramStreamClient] ❌ 無 alternatives，忽略結果');
       return;
     }
 
@@ -278,8 +313,11 @@ export class DeepgramStreamClient {
     const isFinal = data.is_final;
 
     if (!transcript) {
+      console.warn('[DeepgramStreamClient] ⚠️ 空字幕 transcript，跳過此結果');
       return; // 空字幕，忽略
     }
+
+    console.log('[DeepgramStreamClient] 🔍 transcript (raw):', JSON.stringify(transcript));
 
     // 更新統計
     this.stats.transcriptsReceived++;
@@ -300,6 +338,45 @@ export class DeepgramStreamClient {
         words: alternative.words || [],
         timestamp: Date.now(),
       });
+    }
+  }
+
+  /**
+   * 傳送 Deepgram 設定訊息
+   * @private
+   */
+  sendConfigurationMessage() {
+    if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
+      console.warn('[DeepgramStreamClient] ⚠️ WebSocket 尚未開啟，無法傳送設定');
+      return;
+    }
+
+    const configMessage = {
+      type: 'configure',
+      encoding: DEEPGRAM_CONFIG.ENCODING,
+      sample_rate: DEEPGRAM_CONFIG.SAMPLE_RATE,
+      channels: DEEPGRAM_CONFIG.CHANNELS,
+      multichannel: !!DEEPGRAM_CONFIG.MULTICHANNEL,
+      interim_results: !!DEEPGRAM_CONFIG.INTERIM_RESULTS,
+      punctuate: !!DEEPGRAM_CONFIG.PUNCTUATE,
+      smart_format: !!DEEPGRAM_CONFIG.SMART_FORMAT,
+      endpointing: DEEPGRAM_CONFIG.ENDPOINTING,
+    };
+
+    if (DEEPGRAM_CONFIG.DETECT_LANGUAGE) {
+      configMessage.detect_language = true;
+      if (Array.isArray(DEEPGRAM_CONFIG.LANGUAGE_HINTS) && DEEPGRAM_CONFIG.LANGUAGE_HINTS.length > 0) {
+        configMessage.languages = DEEPGRAM_CONFIG.LANGUAGE_HINTS;
+      }
+    } else if (DEEPGRAM_CONFIG.LANGUAGE) {
+      configMessage.language = DEEPGRAM_CONFIG.LANGUAGE;
+    }
+
+    try {
+      this.websocket.send(JSON.stringify(configMessage));
+      console.log('[DeepgramStreamClient] ⚙️ 已傳送設定訊息', configMessage);
+    } catch (error) {
+      console.error('[DeepgramStreamClient] ❌ 傳送設定訊息失敗:', error);
     }
   }
 
@@ -356,6 +433,14 @@ export class DeepgramStreamClient {
     }
 
     try {
+      // 診斷：檢查 audioData 類型
+      if (this.stats.audioBytesSent === 0) {
+        console.log('[DeepgramStreamClient] 🔍 首次發送音訊診斷:');
+        console.log('  - Type:', audioData.constructor.name);
+        console.log('  - ByteLength:', audioData.byteLength);
+        console.log('  - Is ArrayBuffer:', audioData instanceof ArrayBuffer);
+      }
+
       this.websocket.send(audioData);
       this.stats.audioBytesSent += audioData.byteLength;
 

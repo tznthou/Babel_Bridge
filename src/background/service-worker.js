@@ -149,9 +149,52 @@ class SubtitleService {
       return;
     }
 
-    const { pcmData, frameIndex, sampleRate } = frameData;
+    const { pcmArray, frameIndex, sampleRate } = frameData;
 
-    // 直接發送到 Deepgram（即時串流）
+    // 重建 ArrayBuffer（從 Offscreen Document 傳來的 Array）
+    // chrome.runtime.sendMessage 不支援直接傳輸 ArrayBuffer，需要在這裡重建
+    const pcmData = new Int16Array(pcmArray).buffer;
+
+    if (frameIndex <= 5 || frameIndex % 200 === 0) {
+      let min = Infinity;
+      let max = -Infinity;
+      let sumAbs = 0;
+      let nonZero = 0;
+      for (let i = 0; i < pcmArray.length; i++) {
+        const sample = pcmArray[i];
+        if (sample < min) min = sample;
+        if (sample > max) max = sample;
+        const abs = Math.abs(sample);
+        if (abs > 0) {
+          nonZero++;
+          sumAbs += abs;
+        }
+      }
+      const avgAbs = nonZero ? sumAbs / nonZero : 0;
+      console.log('[SubtitleService] 🎚️ PCM 振幅診斷', {
+        frameIndex,
+        min,
+        max,
+        avgAbs: Number(avgAbs.toFixed(2)),
+        nonZeroSamples: nonZero,
+        sampleRate,
+      });
+      if (frameIndex === 1) {
+        console.log('[SubtitleService] 🎧 PCM 前 16 samples:', pcmArray.slice(0, 16));
+      }
+    }
+
+    // 診斷：首次 frame 檢查
+    if (frameIndex === 1) {
+      console.log('[SubtitleService] 🔍 首次 PCM Frame 診斷:');
+      console.log('  - pcmArray type:', Array.isArray(pcmArray) ? 'Array' : typeof pcmArray);
+      console.log('  - pcmArray length:', pcmArray.length);
+      console.log('  - pcmData type:', pcmData.constructor.name);
+      console.log('  - pcmData byteLength:', pcmData.byteLength);
+      console.log('  - Is ArrayBuffer:', pcmData instanceof ArrayBuffer);
+    }
+
+    // 發送到 Deepgram（即時串流）
     this.deepgramClient.sendAudio(pcmData);
   }
 

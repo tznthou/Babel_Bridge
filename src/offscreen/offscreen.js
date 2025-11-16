@@ -21,6 +21,7 @@ let workletNode = null;
 let sourceNode = null;
 let isProcessing = false;
 let frameCount = 0;
+let mirrorAudioElement = null;
 
 /**
  * 處理來自 Service Worker 的訊息
@@ -70,15 +71,26 @@ async function handleStartAudioCapture(captureData, sendResponse) {
         mandatory: {
           chromeMediaSource: 'tab',
           chromeMediaSourceId: streamId,
-          suppressLocalAudioPlayback: true, // 避免回音
+          // 不需要 suppressLocalAudioPlayback，因為 AudioWorklet 沒有 connect 到 destination
+          // 讓 YouTube 影片正常播放
         },
       },
     });
 
     console.log('[Offscreen Deepgram] ✅ MediaStream 已取得');
 
+    await startMirrorAudioPlayback(mediaStream);
+
     // 2. 建立 AudioContext (48kHz 預設)
     audioContext = new AudioContext();
+    if (audioContext.state === 'suspended') {
+      try {
+        await audioContext.resume();
+        console.log('[Offscreen Deepgram] 🔊 AudioContext 已恢復 (suspended → running)');
+      } catch (resumeError) {
+        console.warn('[Offscreen Deepgram] ⚠️ AudioContext resume 失敗:', resumeError);
+      }
+    }
 
     console.log('[Offscreen Deepgram] 🎵 AudioContext 建立', {
       sampleRate: audioContext.sampleRate,
@@ -138,10 +150,14 @@ function handlePCMFrame(frameData, tabId) {
     }
 
     // 轉發到 Service Worker → DeepgramStreamClient
+    // 注意：chrome.runtime.sendMessage 不支援直接傳輸 ArrayBuffer
+    // 需要轉換為 Array，在 Service Worker 端重建
+    const pcmArray = Array.from(new Int16Array(data));
+
     chrome.runtime.sendMessage({
       type: 'DEEPGRAM_PCM_FRAME',
       data: {
-        pcmData: data, // ArrayBuffer (Int16)
+        pcmArray, // Int16 陣列（會在 Service Worker 重建為 ArrayBuffer）
         frameIndex,
         sampleCount,
         sampleRate,
@@ -209,6 +225,8 @@ async function stopAudioCapture() {
     mediaStream = null;
   }
 
+  stopMirrorAudioPlayback();
+
   frameCount = 0;
 
   console.log('[Offscreen Deepgram] ✅ 已清理所有資源');
@@ -219,3 +237,61 @@ console.log('[Offscreen Deepgram] 🚀 Deepgram offscreen document 已載入');
 console.log('[Offscreen Deepgram] AudioWorklet PCM processing ready');
 console.log('[Offscreen Deepgram] UserAgent:', navigator.userAgent);
 console.log('[Offscreen Deepgram] ========================================');
+
+function ensureMirrorAudioElement() {
+  if (!mirrorAudioElement) {
+    mirrorAudioElement = document.createElement('audio');
+    mirrorAudioElement.setAttribute('data-role', 'babel-bridge-audio-mirror');
+    mirrorAudioElement.autoplay = true;
+    mirrorAudioElement.playsInline = true;
+    mirrorAudioElement.muted = false;
+    mirrorAudioElement.volume = 1;
+    mirrorAudioElement.style.position = 'absolute';
+    mirrorAudioElement.style.left = '-9999px';
+    mirrorAudioElement.style.width = '1px';
+    mirrorAudioElement.style.height = '1px';
+    document.body.appendChild(mirrorAudioElement);
+    console.log('[Offscreen Deepgram] 🎧 鏡射音訊 <audio> 元素已建立');
+  }
+  return mirrorAudioElement;
+}
+
+async function startMirrorAudioPlayback(stream) {
+  if (!stream) {
+    console.warn('[Offscreen Deepgram] ⚠️ 無法啟動鏡射播放：mediaStream 為空');
+    return;
+  }
+
+  const audioElement = ensureMirrorAudioElement();
+
+  if (audioElement.srcObject !== stream) {
+    audioElement.srcObject = stream;
+  }
+
+  audioElement.muted = false;
+  audioElement.volume = 1;
+
+  try {
+    const playPromise = audioElement.play();
+    if (playPromise && typeof playPromise.then === 'function') {
+      await playPromise;
+    }
+    console.log('[Offscreen Deepgram] 🔈 鏡射音訊播放啟動');
+  } catch (error) {
+    console.error('[Offscreen Deepgram] ❌ 鏡射音訊播放失敗:', error);
+  }
+}
+
+function stopMirrorAudioPlayback() {
+  if (!mirrorAudioElement) {
+    return;
+  }
+
+  try {
+    mirrorAudioElement.pause();
+    mirrorAudioElement.srcObject = null;
+    console.log('[Offscreen Deepgram] 🔇 鏡射音訊播放已停止');
+  } catch (error) {
+    console.warn('[Offscreen Deepgram] ⚠️ 停止鏡射音訊播放失敗:', error);
+  }
+}
