@@ -3,7 +3,7 @@
  */
 import { APIKeyManager } from '../lib/api-key-manager.js';
 import { DeepgramKeyManager } from '../lib/deepgram-key-manager.js';
-import { MessageTypes } from '../lib/config.js';
+import { MessageTypes, STORAGE_KEYS } from '../lib/config.js';
 
 // DOM 元素 - Tab 切換
 const tabs = document.querySelectorAll('.tab');
@@ -28,6 +28,11 @@ const deepgramKeyVerified = document.getElementById('deepgram-key-verified');
 const deepgramProjectUuid = document.getElementById('deepgram-project-uuid');
 const deepgramScopes = document.getElementById('deepgram-scopes');
 const removeDeepgramKeyBtn = document.getElementById('remove-deepgram-key');
+
+// DOM 元素 - Deepgram 設定
+const deepgramModelSelect = document.getElementById('deepgram-model');
+const deepgramLanguageSelect = document.getElementById('deepgram-language');
+const deepgramSettingsHint = document.getElementById('deepgram-settings-hint');
 
 // DOM 元素 - 字幕控制
 const enableBtn = document.getElementById('enable-btn');
@@ -79,11 +84,14 @@ async function init() {
   initTabs();
 
   try {
-  // 載入 OpenAI API Key 狀態
+    // 載入 OpenAI API Key 狀態
     await loadOpenaiKeyInfo();
 
     // 載入 Deepgram API Key 狀態
     await loadDeepgramKeyInfo();
+
+    // 載入 Deepgram 設定（模型、語言）
+    await loadDeepgramSettings();
 
     // 載入成本統計
     await loadCostStats();
@@ -305,6 +313,121 @@ async function removeDeepgramKey() {
 }
 
 /**
+ * 載入 Deepgram 設定（模型、語言）
+ */
+async function loadDeepgramSettings() {
+  try {
+    const result = await chrome.storage.local.get([
+      STORAGE_KEYS.DEEPGRAM_MODEL,
+      STORAGE_KEYS.DEEPGRAM_LANGUAGE,
+    ]);
+
+    // 設定模型（預設 nova-2）
+    const model = result[STORAGE_KEYS.DEEPGRAM_MODEL] || 'nova-2';
+    deepgramModelSelect.value = model;
+
+    // 設定語言（預設 zh-TW）
+    const language = result[STORAGE_KEYS.DEEPGRAM_LANGUAGE] || 'zh-TW';
+
+    // 根據模型更新語言選項
+    updateLanguageOptions(model);
+
+    // 設定語言值
+    deepgramLanguageSelect.value = language;
+
+    // 更新提示文字
+    updateSettingsHint(model, language);
+
+    console.log('[Popup] Deepgram 設定已載入:', { model, language });
+  } catch (error) {
+    console.error('[Popup] 載入 Deepgram 設定失敗:', error);
+  }
+}
+
+/**
+ * 儲存 Deepgram 設定
+ */
+async function saveDeepgramSettings() {
+  try {
+    const model = deepgramModelSelect.value;
+    const language = deepgramLanguageSelect.value;
+
+    await chrome.storage.local.set({
+      [STORAGE_KEYS.DEEPGRAM_MODEL]: model,
+      [STORAGE_KEYS.DEEPGRAM_LANGUAGE]: language,
+    });
+
+    console.log('[Popup] Deepgram 設定已儲存:', { model, language });
+
+    // 更新提示文字
+    updateSettingsHint(model, language);
+  } catch (error) {
+    console.error('[Popup] 儲存 Deepgram 設定失敗:', error);
+  }
+}
+
+/**
+ * 根據模型更新語言選項
+ * @param {string} model - 模型 ID ('nova-2' 或 'nova-3')
+ */
+function updateLanguageOptions(model) {
+  const multiOption = deepgramLanguageSelect.querySelector('option[value="multi"]');
+
+  if (model === 'nova-3') {
+    // Nova-3 支援自動偵測
+    multiOption.disabled = false;
+    multiOption.textContent = '🌐 自動偵測';
+  } else {
+    // Nova-2 不支援自動偵測
+    multiOption.disabled = true;
+    multiOption.textContent = '🌐 自動偵測 (僅 Nova-3)';
+
+    // 如果當前選擇的是 multi，自動切換到 zh-TW
+    if (deepgramLanguageSelect.value === 'multi') {
+      deepgramLanguageSelect.value = 'zh-TW';
+      saveDeepgramSettings();
+    }
+  }
+}
+
+/**
+ * 更新設定提示文字
+ * @param {string} model - 模型 ID
+ * @param {string} language - 語言代碼
+ */
+function updateSettingsHint(model, language) {
+  if (model === 'nova-3') {
+    if (language === 'multi') {
+      deepgramSettingsHint.textContent = '✨ 使用 Nova-3 自動語言偵測（費用 +79%）';
+    } else {
+      deepgramSettingsHint.textContent = '🚀 使用 Nova-3 進階模型，固定語言（費用 +79%）';
+    }
+  } else {
+    deepgramSettingsHint.textContent = '💰 使用 Nova-2 標準模型，性價比高';
+  }
+}
+
+/**
+ * 處理模型變更
+ */
+function handleModelChange() {
+  const model = deepgramModelSelect.value;
+
+  // 更新語言選項
+  updateLanguageOptions(model);
+
+  // 儲存設定
+  saveDeepgramSettings();
+}
+
+/**
+ * 處理語言變更
+ */
+function handleLanguageChange() {
+  saveDeepgramSettings();
+}
+
+/**
  * 啟用字幕
  */
 async function enableSubtitles() {
@@ -409,6 +532,10 @@ removeOpenaiKeyBtn.addEventListener('click', removeOpenaiKey);
 // 事件監聽 - Deepgram
 verifyDeepgramBtn.addEventListener('click', verifyDeepgramKey);
 removeDeepgramKeyBtn.addEventListener('click', removeDeepgramKey);
+
+// 事件監聽 - Deepgram 設定
+deepgramModelSelect.addEventListener('change', handleModelChange);
+deepgramLanguageSelect.addEventListener('change', handleLanguageChange);
 
 // 事件監聽 - 字幕控制
 enableBtn.addEventListener('click', enableSubtitles);

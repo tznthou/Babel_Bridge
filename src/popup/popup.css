@@ -290,3 +290,67 @@ footer {
   font-weight: 600;
   color: var(--text-color);
 }
+
+/* ==================== Deepgram 設定樣式 ==================== */
+
+.settings-group {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.settings-group h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text-color);
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.setting-item label {
+  min-width: 50px;
+  font-size: 13px;
+  color: #7f8c8d;
+}
+
+.setting-item select {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 13px;
+  background: white;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.setting-item select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.setting-item select:disabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.setting-item select option:disabled {
+  color: #ccc;
+}
+
+.hint {
+  font-size: 11px;
+  color: #95a5a6;
+  margin-top: 8px;
+  padding: 8px;
+  background: #f8f9fa;
+  border-radius: 4px;
+  line-height: 1.4;
+}

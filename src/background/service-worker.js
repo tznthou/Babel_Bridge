@@ -16,7 +16,7 @@ import { DeepgramStreamClient } from './deepgram-stream-client.js';
 import { APIKeyManager } from '../lib/api-key-manager.js';
 import { ErrorHandler } from '../lib/error-handler.js';
 import { BabelBridgeError, ErrorCodes } from '../lib/errors.js';
-import { MessageTypes } from '../lib/config.js';
+import { MessageTypes, STORAGE_KEYS } from '../lib/config.js';
 
 /**
  * 全域狀態管理（Deepgram Streaming）
@@ -36,9 +36,20 @@ class SubtitleService {
    * 初始化服務
    */
   async init() {
-    // 初始化 Deepgram Stream Client
+    // 讀取用戶的 Deepgram 設定
+    const settings = await chrome.storage.local.get([
+      STORAGE_KEYS.DEEPGRAM_MODEL,
+      STORAGE_KEYS.DEEPGRAM_LANGUAGE,
+    ]);
+
+    const model = settings[STORAGE_KEYS.DEEPGRAM_MODEL] || 'nova-2';
+    const language = settings[STORAGE_KEYS.DEEPGRAM_LANGUAGE] || 'zh-TW';
+
+    console.log('[SubtitleService] 載入用戶設定:', { model, language });
+
+    // 初始化 Deepgram Stream Client（傳入用戶設定）
     this.deepgramClient = new DeepgramStreamClient();
-    await this.deepgramClient.init();
+    await this.deepgramClient.init({ model, language });
 
     // 設定即時字幕回調
     this.deepgramClient.onTranscript = (transcript) => {
@@ -69,10 +80,8 @@ class SubtitleService {
     }
 
     try {
-      // 確保初始化
-      if (!this.deepgramClient) {
-        await this.init();
-      }
+      // 每次啟用時重新初始化，確保使用最新的用戶設定
+      await this.init();
 
       this.currentTabId = tabId;
 

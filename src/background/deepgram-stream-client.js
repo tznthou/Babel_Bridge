@@ -39,6 +39,10 @@ export class DeepgramStreamClient {
     this.connectionState = ConnectionState.DISCONNECTED;
     this.apiKey = null;
 
+    // 動態配置（可在 init() 時覆蓋）
+    this.model = DEEPGRAM_CONFIG.MODEL;
+    this.language = DEEPGRAM_CONFIG.LANGUAGE;
+
     // 重連機制
     this.reconnectAttempts = 0;
     this.reconnectTimer = null;
@@ -67,10 +71,21 @@ export class DeepgramStreamClient {
 
   /**
    * 初始化並建立 WebSocket 連線
+   * @param {Object} config - 可選配置
+   * @param {string} config.model - 模型 ID ('nova-2' 或 'nova-3')
+   * @param {string} config.language - 語言代碼 ('multi', 'en', 'zh-TW' 等)
    * @returns {Promise<void>}
    */
-  async init() {
-    console.log('[DeepgramStreamClient] 🔄 初始化中...');
+  async init(config = {}) {
+    // 應用動態配置
+    if (config.model) {
+      this.model = config.model;
+    }
+    if (config.language) {
+      this.language = config.language;
+    }
+
+    console.log('[DeepgramStreamClient] 🔄 初始化中...', { model: this.model, language: this.language });
 
     try {
       // 取得 API Key
@@ -114,16 +129,6 @@ export class DeepgramStreamClient {
       // 建構 WebSocket URL（不含 token）
       const wsUrl = this.buildWebSocketUrl();
 
-      const languageInfo = DEEPGRAM_CONFIG.DETECT_LANGUAGE
-        ? `auto (${(DEEPGRAM_CONFIG.LANGUAGE_HINTS || []).join(', ') || 'any'})`
-        : DEEPGRAM_CONFIG.LANGUAGE;
-
-      console.log('[DeepgramStreamClient] 🔗 連線到 Deepgram...', {
-        url: DEEPGRAM_CONFIG.WEBSOCKET_URL,
-        model: DEEPGRAM_CONFIG.MODEL,
-        language: languageInfo,
-      });
-
       // 建立 WebSocket（使用 subprotocols 傳遞 API key）
       // 瀏覽器 WebSocket 不支援 custom headers，必須使用 protocols
       this.websocket = new WebSocket(wsUrl, ['token', this.apiKey]);
@@ -161,8 +166,9 @@ export class DeepgramStreamClient {
    * @private
    */
   buildWebSocketUrl() {
+    // 使用實例的動態配置（this.model, this.language）
     const params = new URLSearchParams({
-      model: DEEPGRAM_CONFIG.MODEL,
+      model: this.model,
       encoding: DEEPGRAM_CONFIG.ENCODING,
       sample_rate: DEEPGRAM_CONFIG.SAMPLE_RATE.toString(),
       channels: DEEPGRAM_CONFIG.CHANNELS.toString(),
@@ -173,20 +179,17 @@ export class DeepgramStreamClient {
       multichannel: DEEPGRAM_CONFIG.MULTICHANNEL ? 'true' : 'false',
     });
 
-    if (DEEPGRAM_CONFIG.DETECT_LANGUAGE) {
-      params.set('detect_language', 'true');
-      if (Array.isArray(DEEPGRAM_CONFIG.LANGUAGE_HINTS) && DEEPGRAM_CONFIG.LANGUAGE_HINTS.length > 0) {
-        params.set('languages', DEEPGRAM_CONFIG.LANGUAGE_HINTS.join(','));
-      }
-    } else if (DEEPGRAM_CONFIG.LANGUAGE) {
-      params.set('language', DEEPGRAM_CONFIG.LANGUAGE);
+    // 使用實例的語言設定
+    if (this.language) {
+      params.set('language', this.language);
     }
 
     // 注意：不在 URL 中包含 token（改用 WebSocket subprotocols）
     const wsUrl = `${DEEPGRAM_CONFIG.WEBSOCKET_URL}?${params.toString()}`;
-    
+
     console.log('[DeepgramStreamClient] 🔗 WebSocket URL:', wsUrl);
-    
+    console.log('[DeepgramStreamClient] 🔗 連線到 Deepgram...', { url: 'wss://api.deepgram.com/v1/listen', model: this.model, language: this.language });
+
     return wsUrl;
   }
 

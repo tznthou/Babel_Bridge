@@ -188,9 +188,9 @@ export const DEEPGRAM_CONFIG = {
   WEBSOCKET_URL: 'wss://api.deepgram.com/v1/listen',
 
   // 模型設定
-  MODEL: 'nova-2', // Nova-2 最新且支援中文
-  LANGUAGE: 'en-US', // 固定為英文（測試用，避免 detect_language 導致 WebSocket 400）
-  DETECT_LANGUAGE: false, // 暫時關閉自動偵測（會導致 WebSocket 400）
+  MODEL: 'nova-2', // Nova-2 標準模型
+  LANGUAGE: 'zh-TW', // 預設繁體中文（Nova-2 不支援 multi，僅 Nova-3 支援）
+  DETECT_LANGUAGE: false, // streaming 不支援 detect_language 參數
   // LANGUAGE_HINTS: ['en', 'zh', 'zh-TW', 'zh-CN'], // 偵測優先語系（auto detect 時使用）
   MULTICHANNEL: false, // 強制視為單聲道，避免 channel_index=[0,1]
 
@@ -213,6 +213,45 @@ export const DEEPGRAM_CONFIG = {
   // 成本計算（Nova-2 定價）
   COST_PER_MINUTE: 0.0043, // $0.0043/分鐘
 };
+
+/**
+ * Deepgram 模型選項
+ */
+export const DEEPGRAM_MODELS = [
+  {
+    id: 'nova-2',
+    name: 'Nova-2 (標準)',
+    cost: 0.0043,
+    supportsMulti: false, // Nova-2 不支援 language=multi
+    description: '性價比高，適合單一語言',
+  },
+  {
+    id: 'nova-3',
+    name: 'Nova-3 (進階)',
+    cost: 0.0077,
+    supportsMulti: true, // Nova-3 支援 language=multi
+    description: '支援自動語言偵測，準確度更高',
+  },
+];
+
+/**
+ * Deepgram 支援的語言
+ */
+export const DEEPGRAM_LANGUAGES = [
+  { code: 'multi', name: '🌐 自動偵測', nova3Only: true },
+  { code: 'en', name: '🇺🇸 English' },
+  { code: 'en-US', name: '🇺🇸 English (US)' },
+  { code: 'en-GB', name: '🇬🇧 English (UK)' },
+  { code: 'zh-TW', name: '🇹🇼 繁體中文' },
+  { code: 'zh', name: '🇨🇳 简体中文' },
+  { code: 'ja', name: '🇯🇵 日本語' },
+  { code: 'ko', name: '🇰🇷 한국어' },
+  { code: 'es', name: '🇪🇸 Español' },
+  { code: 'fr', name: '🇫🇷 Français' },
+  { code: 'de', name: '🇩🇪 Deutsch' },
+  { code: 'pt', name: '🇵🇹 Português' },
+  { code: 'ru', name: '🇷🇺 Русский' },
+];
 
 /**
  * AudioWorklet PCM 處理配置
@@ -238,6 +277,8 @@ export const STORAGE_KEYS = {
   DEEPGRAM_API_KEY_VERIFIED_AT: 'deepgram_api_key_verified_at',
   DEEPGRAM_API_KEY_SCOPES: 'deepgram_api_key_scopes',
   DEEPGRAM_PROJECT_UUID: 'deepgram_project_uuid',
+  DEEPGRAM_MODEL: 'deepgram_model', // 'nova-2' | 'nova-3'
+  DEEPGRAM_LANGUAGE: 'deepgram_language', // 'multi' | 'en' | 'zh-TW' | ...
 
   // 通用
   USER_SETTINGS: 'user_settings',
