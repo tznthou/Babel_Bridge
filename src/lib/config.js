@@ -189,7 +189,10 @@ export const DEEPGRAM_CONFIG = {
 
   // 模型設定
   MODEL: 'nova-2', // Nova-2 最新且支援中文
-  LANGUAGE: 'zh-TW', // 或 'zh-CN'
+  LANGUAGE: 'en-US', // 固定為英文（測試用，避免 detect_language 導致 WebSocket 400）
+  DETECT_LANGUAGE: false, // 暫時關閉自動偵測（會導致 WebSocket 400）
+  // LANGUAGE_HINTS: ['en', 'zh', 'zh-TW', 'zh-CN'], // 偵測優先語系（auto detect 時使用）
+  MULTICHANNEL: false, // 強制視為單聲道，避免 channel_index=[0,1]
 
   // 音訊格式
   ENCODING: 'linear16',

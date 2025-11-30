@@ -34,6 +34,7 @@ coverage/
 
 # Development notes & test scripts
 NewWay*.md
+ai_coding_*.md
 diagnostic-script.js
 test-message.js
 

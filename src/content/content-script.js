@@ -186,9 +186,16 @@ class SubtitleOverlay {
   }
 
   /**
-   * 接收新的字幕資料
+   * 接收新的字幕資料（支援 Deepgram 即時字幕和 Whisper segments）
    */
   addSubtitleData(data) {
+    // Deepgram 即時字幕格式
+    if (data.text !== undefined) {
+      this.addDeepgramTranscript(data);
+      return;
+    }
+
+    // Whisper segments 格式
     if (!data.segments || data.segments.length === 0) {
       console.log('[ContentScript] 收到空的字幕資料');
       return;
@@ -209,7 +216,7 @@ class SubtitleOverlay {
       // 延遲到達補償：如果 segment 已經過去，延長顯示時間
       const delaySeconds = Math.max(0, currentVideoTime - seg.end);
       const adjustedEnd = delaySeconds > 0 ? currentVideoTime + 3 : seg.end;
-      
+
       return {
         ...seg,
         end: adjustedEnd,
@@ -236,6 +243,71 @@ class SubtitleOverlay {
     // 立即更新顯示
     this.pruneOldSegments(currentVideoTime);
     this.updateDisplay(currentVideoTime);
+  }
+
+  /**
+   * 處理 Deepgram 即時字幕（直接顯示，不依賴時間戳）
+   */
+  addDeepgramTranscript(data) {
+    const { text, isFinal, confidence } = data;
+
+    console.log('[ContentScript] 🎤 Deepgram 即時字幕:', {
+      text,
+      isFinal,
+      confidence,
+    });
+
+    if (!text || text.trim() === '') {
+      console.log('[ContentScript] 空白字幕，跳過');
+      return;
+    }
+
+    // 即時字幕：直接顯示，不需要時間同步
+    // Final 字幕顯示 3 秒，Interim 字幕持續更新
+    const currentTime = this.videoMonitor.getCurrentTime();
+    const segment = {
+      text: text.trim(),
+      start: currentTime,
+      end: currentTime + (isFinal ? 3 : 999999), // Interim 字幕一直顯示直到被 Final 替換
+      confidence,
+      isFinal,
+      _deepgram: true,
+    };
+
+    if (isFinal) {
+      // Final 字幕：加入 segments 列表
+      this.segments.push(segment);
+      this.segments.sort((a, b) => a.start - b.start);
+      console.log('[ContentScript] ✅ Final 字幕已加入，總共', this.segments.length, '個');
+    }
+
+    // 立即顯示（Final 和 Interim 都顯示）
+    this.showDirect(segment);
+  }
+
+  /**
+   * 直接顯示字幕（不經過時間查找）
+   */
+  showDirect(segment) {
+    // 清空容器
+    while (this.container.firstChild) {
+      this.container.removeChild(this.container.firstChild);
+    }
+
+    // 建立字幕元素
+    const subtitleEl = document.createElement('div');
+    subtitleEl.className = 'babel-subtitle';
+    subtitleEl.textContent = segment.text;
+
+    // Interim 字幕半透明
+    if (!segment.isFinal) {
+      subtitleEl.style.opacity = '0.7';
+    }
+
+    this.container.appendChild(subtitleEl);
+    this.container.style.display = 'flex';
+
+    console.log('[ContentScript] 📺 顯示字幕:', segment.text, `[${segment.isFinal ? 'Final' : 'Interim'}]`);
   }
 
   /**
