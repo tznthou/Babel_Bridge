@@ -7,26 +7,68 @@
 
 Babel Bridge 是一個免費的 Chrome 瀏覽器擴充功能,專為聾啞人士、外語學習者與需要字幕的觀眾設計。透過 AI 語音辨識技術,將任何網路影片的音訊即時轉換為準確的字幕,並支援多語言翻譯。就像巴別塔的反面——我們不製造語言障礙,而是消除它們。
 
-本專案採用 Chrome 原生 API 直接擷取影片音訊流,搭配 OpenAI Whisper 進行高準確度語音辨識,延遲約 5.3-6.5 秒 (3s 累積 + 0.5s 編碼 + 2-3s API),為使用者提供流暢的觀影體驗。
+**雙引擎架構** — 根據需求選擇最適合的語音辨識引擎：
+
+| 引擎 | 延遲 | 準確度 | 適用場景 |
+|------|------|--------|----------|
+| **Deepgram Streaming** | 2-3 秒 | 高 | 即時對話、直播、會議 |
+| **OpenAI Whisper** | 5-7 秒 | 極高 | 預錄影片、高品質字幕 |
+
+本專案採用 Chrome 原生 API 直接擷取影片音訊流，支援 Deepgram Nova-2/Nova-3 即時串流與 OpenAI Whisper 批次辨識，為使用者提供流暢的觀影體驗。
 
 ---
 
 ## 🚀 功能摘要 (Key Features)
 
-- ✅ **即時語音辨識**: 使用 OpenAI Whisper API,準確度高達 90%+,支援 90+ 語言
-- 🎯 **智慧斷句處理**: Rolling Window 技術配合 AI 語義分析,避免句子被不當切斷
-- 🌍 **多語言翻譯**: 整合 GPT-4o-mini,將字幕即時翻譯成目標語言
-- 🎨 **雙層字幕顯示**: 同時顯示原文與翻譯,可自訂樣式、大小、位置
+- ⚡ **雙引擎架構**: Deepgram 即時串流（2-3s 延遲）+ Whisper 高準確辨識（5-7s 延遲）
+- 🎙️ **Deepgram Streaming**: Nova-2/Nova-3 模型，WebSocket 即時串流，支援 12 種語言 + 自動偵測
+- ✅ **Whisper 高準確辨識**: OpenAI Whisper API，準確度 90%+，支援 90+ 語言
+- 🎯 **智慧斷句處理**: Rolling Window 技術配合 AI 語義分析，避免句子被不當切斷
+- 🌍 **多語言翻譯**: 整合 GPT-4o-mini，將字幕即時翻譯成目標語言（開發中）
+- 🎨 **雙層字幕顯示**: 同時顯示原文與翻譯，可自訂樣式、大小、位置
 - 🔒 **隱私與安全**:
-  - 音訊處理僅在必要時傳送至 API,不做任何儲存
+  - 音訊處理僅在必要時傳送至 API，不做任何儲存
   - **API Key 加密保護**: 使用 AES-256-GCM 軍事級加密儲存
-  - 瀏覽器指紋衍生金鑰,防止跨裝置竊取
+  - 瀏覽器指紋衍生金鑰，防止跨裝置竊取
   - 安全評分: 96/100 (符合 OWASP 2023 標準)
-- 🆓 **完全免費**: 開源專案,使用者僅需自備 OpenAI API Key
+- 🆓 **完全免費**: 開源專案，使用者僅需自備 API Key（OpenAI 或 Deepgram）
 
 ---
 
 ## 🏗️ 系統架構 (Architecture)
+
+### Deepgram Streaming 架構（即時串流，延遲 2-3 秒）
+
+```mermaid
+flowchart TB
+    subgraph Browser["瀏覽器環境"]
+        Video[影片播放]
+        ContentScript[Content Script<br/>字幕顯示層]
+    end
+
+    subgraph Extension["Extension 核心"]
+        Background[Background Service Worker<br/>DeepgramStreamClient]
+        Offscreen[Offscreen Document<br/>AudioWorklet PCM 處理]
+        Popup[Popup UI<br/>模型/語言選擇]
+    end
+
+    subgraph Deepgram["Deepgram API"]
+        WebSocket[WebSocket Streaming<br/>Nova-2 / Nova-3]
+    end
+
+    Video -->|chrome.tabCapture| Background
+    Background -->|streamId| Offscreen
+    Offscreen -->|getUserMedia| Offscreen
+    Offscreen -->|AudioWorklet<br/>48kHz→16kHz PCM| Offscreen
+    Offscreen -->|Int16 PCM frames| Background
+    Background -->|WebSocket| WebSocket
+    WebSocket -->|即時 transcript<br/>interim/final| Background
+    Background -->|字幕資料| ContentScript
+    ContentScript -->|疊加顯示| Video
+    Popup -.->|模型/語言設定| Background
+```
+
+### Whisper 批次架構（高準確度，延遲 5-7 秒）
 
 ```mermaid
 flowchart TB
@@ -62,10 +104,18 @@ flowchart TB
 ```
 
 **架構說明:**
-- **Background Service Worker**: 核心控制器,管理音訊擷取、Base64 重建、API 呼叫與字幕分發
-- **Offscreen Document**: 使用 MediaRecorder 產生 audio/webm chunk（3 秒 timeslice），轉為 Base64 傳輸避免 MV3 Blob 失真
-- **Content Script**: 注入目標網頁,負責字幕 UI 渲染與影片時間同步（VideoMonitor）
-- **Popup UI**: 提供開關控制、語言選擇、API Key 設定等功能
+
+| 元件 | Deepgram Streaming | Whisper 批次 |
+|------|-------------------|--------------|
+| **Background** | DeepgramStreamClient + WebSocket | WhisperClient + REST API |
+| **Offscreen** | AudioWorklet PCM (16kHz) | MediaRecorder WebM (3s) |
+| **音訊傳輸** | Int16 PCM frames | Base64 encoded WebM |
+| **延遲** | 2-3 秒 | 5-7 秒 |
+
+- **Background Service Worker**: 核心控制器，管理音訊擷取、API 呼叫與字幕分發
+- **Offscreen Document**: Deepgram 用 AudioWorklet 產生 PCM；Whisper 用 MediaRecorder 產生 WebM
+- **Content Script**: 注入目標網頁，負責字幕 UI 渲染與影片時間同步
+- **Popup UI**: 提供 API Key 設定、模型選擇（Nova-2/Nova-3）、語言選擇（12 種 + 自動偵測）
 
 ---
 
@@ -175,14 +225,15 @@ Whisper API 處理:   2-3 秒
 | 類別 | 技術 | 備註 |
 |------|------|------|
 | 核心框架 | Chrome Extension (Manifest V3) | 使用最新標準 |
-| 程式語言 | JavaScript (ES6+) | 模組化設計,完整 JSDoc 註解 |
-| 音訊處理 | MediaRecorder API, MediaStream API | **關鍵遷移**: 移除 ScriptProcessorNode（死鎖元兇） |
-| 語音辨識 | OpenAI Whisper API | 高準確度,支援 90+ 語言 |
-| 翻譯引擎 | OpenAI GPT-4o-mini | 智慧翻譯與斷句優化 |
+| 程式語言 | JavaScript (ES6+) | 模組化設計，完整 JSDoc 註解 |
+| **即時串流** | **Deepgram Nova-2/Nova-3** | **WebSocket Streaming，延遲 2-3 秒** |
+| **音訊處理 (Deepgram)** | **AudioWorklet API** | **48kHz→16kHz PCM 即時轉換** |
+| 音訊處理 (Whisper) | MediaRecorder API | 3 秒 timeslice 產生 WebM chunk |
+| 語音辨識 (Whisper) | OpenAI Whisper API | 高準確度，支援 90+ 語言 |
+| 翻譯引擎 | OpenAI GPT-4o-mini | 智慧翻譯與斷句優化（開發中） |
 | **安全加密** | **Web Crypto API** | **AES-256-GCM + PBKDF2 (100k 迭代)** |
 | UI 框架 | 原生 DOM / 輕量級框架 | Content Script 需避免衝突 |
-| 音訊擷取 | MediaRecorder (audio/webm) | Offscreen Document 內以 3 秒 timeslice 產生 chunk |
-| 跨 Context 傳輸 | Base64 序列化 | 避免 MV3 Blob 失真（structured clone 不支援 Blob） |
+| 跨 Context 傳輸 | Base64 / Int16 Array | Deepgram 用 PCM，Whisper 用 Base64 |
 | 儲存 | chrome.storage.local | 加密儲存 API Key 與用戶設定 |
 | 建置工具 | Vite | 現代化打包與開發體驗 |
 | 測試框架 | Jest / Playwright | 單元測試與 E2E 測試 (待實作) |
@@ -195,24 +246,27 @@ Whisper API 處理:   2-3 秒
 Babel Bridge/
 ├── src/
 │   ├── background/                  # 📦 Background 服務
-│   │   ├── service-worker.js        # ✅ 主控制器 (音訊處理管線編排 + Base64 重建)
+│   │   ├── service-worker.js        # ✅ 主控制器 (Deepgram/Whisper 管線編排)
+│   │   ├── deepgram-stream-client.js # ✅ Deepgram WebSocket 串流客戶端
 │   │   ├── audio-capture.js         # ✅ 音訊擷取 (chrome.tabCapture)
 │   │   ├── whisper-client.js        # ✅ Whisper API 整合
 │   │   └── subtitle-processor.js    # ✅ OverlapProcessor (核心去重與斷句)
 │   ├── offscreen/                   # 📦 Offscreen Document
-│   │   └── offscreen.js             # ✅ MediaRecorder + Base64 傳輸 + WebM Header 補強
+│   │   ├── offscreen.js             # ✅ 音訊處理 + 鏡射播放
+│   │   └── pcm-processor.js         # ✅ AudioWorklet PCM 處理 (48kHz→16kHz)
 │   ├── content/                     # 📦 Content Script
 │   │   ├── content-script.js        # ✅ 字幕顯示 (VideoMonitor + SubtitleOverlay)
 │   │   └── subtitle-overlay.css     # ✅ 字幕樣式
 │   ├── popup/                       # 📦 Popup UI
-│   │   ├── popup.html               # ✅ 控制面板 UI
-│   │   ├── popup.js                 # ✅ 面板邏輯 (含加密整合)
+│   │   ├── popup.html               # ✅ 控制面板 UI (含模型/語言選擇)
+│   │   ├── popup.js                 # ✅ 面板邏輯 (雙 API Key 管理)
 │   │   └── popup.css                # ✅ 面板樣式
 │   ├── lib/                         # 📦 核心函式庫
 │   │   ├── errors.js                # ✅ 統一錯誤處理 (BabelBridgeError)
 │   │   ├── error-handler.js         # ✅ 錯誤處理器
-│   │   ├── config.js                # ✅ 全域配置 (CHUNK/WHISPER/OVERLAP_CONFIG)
-│   │   ├── api-key-manager.js       # ✅ API Key 管理 (驗證 + 加密 + 成本追蹤)
+│   │   ├── config.js                # ✅ 全域配置 (含 DEEPGRAM_CONFIG)
+│   │   ├── api-key-manager.js       # ✅ OpenAI API Key 管理
+│   │   ├── deepgram-key-manager.js  # ✅ Deepgram API Key 管理
 │   │   ├── crypto-utils.js          # ✅ 加密工具 (AES-GCM + PBKDF2)
 │   │   ├── language-rules.js        # ✅ 多語言斷句規則
 │   │   └── text-similarity.js       # ✅ Levenshtein Distance 相似度計算
@@ -225,15 +279,13 @@ Babel Bridge/
 │   └── NewWay.md                    # ✅ MediaRecorder 管線遷移記錄
 ├── .serena/                         # AI 記憶檔案 (不納入版控)
 │   └── memories/
-│       ├── mediarecorder-migration-2025-11-11.md  # ✅ 管線遷移完整報告
-│       ├── browser-freeze-debugging-2025-11-09.md
-│       ├── phase1-completion-2025-11-09.md
-│       ├── development-progress-2025-11-08.md
-│       ├── project-status-2025-11-08.md
-│       └── testing-2025-11-08.md
+│       ├── deepgram-streaming-mvp-complete-2025-11-16.md  # ✅ Deepgram MVP 完成
+│       ├── deepgram-model-language-selection-2025-11-30.md # ✅ 模型語言選擇
+│       ├── mediarecorder-migration-2025-11-11.md
+│       └── ...更多記憶檔案
 ├── .gitignore                       # ✅ Git 忽略清單
-├── package.json                     # ✅ 專案配置 (已移除 lamejs 依賴)
-├── vite.config.js                   # ✅ Vite 建置配置 (已移除 Web Worker 配置)
+├── package.json                     # ✅ 專案配置
+├── vite.config.js                   # ✅ Vite 建置配置
 ├── README.md                        # 本檔案
 └── LICENSE                          # ✅ MIT 授權
 ```
@@ -241,10 +293,9 @@ Babel Bridge/
 **圖例說明**:
 - ✅ 已完成實作並測試
 - 📦 核心模組目錄
-- ~~❌ 已移除~~: `audio-chunker.js`, `mp3-encoder.js`, `mp3-encoder.worker.js` (ScriptProcessorNode 死鎖元兇)
-- **關鍵遷移** (2025-11-11): ScriptProcessorNode → MediaRecorder（完全修復瀏覽器凍結問題）
-- Phase 0 已完成: API Key 加密管理系統
-- Phase 1 已完成: MediaRecorder 音訊管線 + 字幕顯示
+- **Phase 0** (2025-11-08): API Key 加密管理系統
+- **Phase 1** (2025-11-15): Whisper 音訊管線 + 字幕顯示
+- **Phase 2** (2025-11-30): Deepgram Streaming + 模型語言選擇
 
 ---
 
@@ -278,36 +329,53 @@ npm run dev
 
 ### 使用方式
 
-#### 首次設定
-1. 安裝 Extension 後,點擊瀏覽器工具列的 Babel Bridge 圖示
-2. 在 Popup 中點擊「設定 API Key」
-3. 前往 [OpenAI Platform](https://platform.openai.com/api-keys) 取得你的 API Key
-4. 將 API Key 貼入設定欄位並儲存
-5. 系統會自動驗證 API Key 是否有效
+#### 首次設定 — 選擇你的語音辨識引擎
+
+**選項 A：Deepgram Streaming（推薦，低延遲）**
+
+1. 前往 [Deepgram Console](https://console.deepgram.com/) 註冊帳號
+2. 建立 API Key（選擇 **Default** 角色，需要 `usage:write` 權限）
+3. 在 Popup 的「Deepgram」頁籤中貼上 API Key
+4. 選擇模型：
+   - **Nova-2**（標準）：$0.0043/分鐘，需手動選擇語言
+   - **Nova-3**（進階）：$0.0077/分鐘，支援自動語言偵測
+5. 選擇語言（12 種可選，或 Nova-3 的「自動偵測」）
+
+**選項 B：OpenAI Whisper（高準確度）**
+
+1. 前往 [OpenAI Platform](https://platform.openai.com/api-keys) 取得 API Key
+2. 在 Popup 的「OpenAI」頁籤中貼上 API Key
+3. 系統會自動驗證 API Key 是否有效
+
+**成本比較**：
+
+| 引擎 | 成本 | 1 小時影片 |
+|------|------|-----------|
+| Deepgram Nova-2 | $0.0043/min | ~$0.26 |
+| Deepgram Nova-3 | $0.0077/min | ~$0.46 |
+| OpenAI Whisper | $0.006/min | ~$0.36 |
 
 **重要提醒**:
-- 🔑 你需要有 OpenAI 帳號並自備 API Key
-- 💰 使用成本約 **$0.37/小時影片**(非常便宜!)
 - 🔒 **API Key 軍事級加密保護**:
   - 使用 AES-256-GCM 加密儲存在本地
   - PBKDF2-SHA256 金鑰衍生 (100,000 迭代)
-  - 瀏覽器指紋綁定,防止跨裝置複製
-  - 不會上傳到任何伺服器,完全本地加密
+  - 瀏覽器指紋綁定，防止跨裝置複製
+  - 不會上傳到任何伺服器，完全本地加密
   - 安全評分: 96/100 (符合 OWASP 2023 標準)
-- 💳 OpenAI 提供新帳號免費額度,足夠測試使用
 
-**支援的 API Key 格式**:
+**支援的 OpenAI API Key 格式**:
 - ✅ Standard Key: `sk-[48字元]` (舊格式)
-- ✅ Project Key: `sk-proj-[字串]` (推薦,新格式)
+- ✅ Project Key: `sk-proj-[字串]` (推薦，新格式)
 - ✅ Admin Key: `sk-admin-[字串]`
 - ✅ Organization Key: `sk-org-[字串]`
 
 #### 日常使用
 1. 前往任何包含影片的網站 (YouTube, Vimeo 等)
 2. 點擊瀏覽器工具列的 Babel Bridge 圖示
-3. 點擊「啟用字幕」按鈕
-4. 允許音訊擷取權限
-5. 字幕將自動出現在影片上!
+3. 選擇語音辨識引擎（Deepgram 或 Whisper）
+4. 點擊「啟用字幕」按鈕
+5. 允許音訊擷取權限
+6. 字幕將自動出現在影片上！
 
 ---
 
@@ -363,15 +431,16 @@ npm run package
 
 ## 📅 開發里程碑 (Milestones)
 
-**當前狀態**: Phase 1 已完成，達到 **MVP 狀態** ✅ → 準備進入 Phase 2 🚀
-**最後更新**: 2025-11-15
+**當前狀態**: Phase 2 已完成 ✅ — 雙引擎架構（Deepgram + Whisper）
+**最後更新**: 2025-11-30
 
 **核心價值**：
+- ✅ **雙引擎架構**：Deepgram 即時串流（2-3s）+ Whisper 高準確（5-7s）
+- ✅ **Deepgram Streaming**：Nova-2/Nova-3 模型，12 種語言 + 自動偵測
 - ✅ 高準確度語音辨識（Whisper 100% 成功率）
 - ✅ 智能字幕去重與斷句（OverlapProcessor）
 - ✅ 動態時間同步（timeDiff 穩定 0.7-2.5s）
-- ✅ 安全的 API Key 管理（AES-256-GCM）
-- ✅ 5-7 秒延遲（雲端 Whisper 架構物理極限）
+- ✅ 安全的 API Key 管理（AES-256-GCM，雙 API Key 支援）
 
 ---
 
@@ -491,25 +560,45 @@ npm run package
 
 ---
 
-### Phase 2: 使用者介面優化 🔲 (預計 2-3 天)
+### Phase 2: Deepgram Streaming ✅ (已完成 - 2025-11-16 ~ 2025-11-30)
 
-- 🔲 **Popup UI 完善**: 控制面板功能完整化
-- 🔲 **字幕樣式自訂**: 大小、顏色、位置、透明度調整
-- 🔲 **成本統計圖表**: 視覺化顯示使用量與成本
-- 🔲 **影片同步**: 與播放狀態同步 (暫停、播放、快轉)
+#### Phase 2.0: Deepgram API Key 管理 ✅
+- ✅ **DeepgramKeyManager**: API Key 驗證與加密儲存
+- ✅ **Popup UI**: Deepgram 頁籤，獨立管理 Deepgram API Key
+- ✅ **權限驗證**: 檢查 `usage:write` 權限
 
-**驗收標準**: 字幕樣式可自訂,控制面板功能完整
+#### Phase 2.1: WebSocket Streaming MVP ✅
+- ✅ **DeepgramStreamClient**: WebSocket 即時串流客戶端
+- ✅ **AudioWorklet PCM 處理**: 48kHz → 16kHz 即時轉換
+- ✅ **Tab 靜音修復**: 鏡射播放（Mirror Audio Playback）
+- ✅ **即時字幕顯示**: Interim + Final transcript 處理
+
+#### Phase 2.2: 模型與語言選擇 ✅ (2025-11-30)
+- ✅ **模型選擇**: Nova-2（標準）/ Nova-3（進階）
+- ✅ **語言選擇**: 12 種語言 + Nova-3 自動偵測
+- ✅ **動態配置**: 設定即時儲存，無需重載 Extension
+- ✅ **智能限制**: Nova-2 時自動禁用「自動偵測」選項
+
+**驗收標準**: ✅ 已通過
+- WebSocket 連線穩定，無 400 錯誤
+- 字幕即時顯示，延遲 2-3 秒
+- 模型/語言切換正常運作
+
+**Git 提交記錄**:
+- `ab9802a` - Deepgram Streaming pipeline 整合（2025-11-16）
+- `fd0c44c` - 修復 WebSocket Schema Error 與語言設定（2025-11-16）
+- `09dd7bd` - 新增模型與語言選擇功能（2025-11-30）
 
 ---
 
-### Phase 3: 翻譯功能 🔲 (預計 2 天)
+### Phase 3: UI 優化與翻譯功能 🔲 (待開發)
 
-- 🔲 **GPT-4o-mini 整合**: 智慧翻譯與斷句優化
+- 🔲 **字幕樣式自訂**: 大小、顏色、位置、透明度調整
+- 🔲 **成本統計圖表**: 視覺化顯示使用量與成本
+- 🔲 **GPT-4o-mini 翻譯**: 智慧翻譯與斷句優化
 - 🔲 **雙層字幕**: 原文 + 翻譯同時顯示
-- 🔲 **語言選擇**: UI 介面與多語言支援
-- 🔲 **效能優化**: 翻譯快取與記憶體管理
 
-**驗收標準**: 能同時顯示原文與翻譯字幕,總延遲 < 8 秒
+**驗收標準**: 字幕樣式可自訂，能同時顯示原文與翻譯字幕
 
 ---
 
@@ -524,52 +613,46 @@ npm run package
 | [`SPEC.md`](./SPEC.md) | 系統規格與 API 契約 |
 
 ### 開發記錄 (Serena AI 記憶)
-- **`.serena/memories/dynamic-time-sync-implementation-2025-11-15.md`** - **動態時間同步實作與 MVP 確認**（2025-11-15，達成 MVP）
+
+**Phase 2 - Deepgram Streaming**:
+- **`.serena/memories/deepgram-model-language-selection-2025-11-30.md`** - **模型與語言選擇功能實作**（2025-11-30）
+- **`.serena/memories/deepgram-streaming-mvp-complete-2025-11-16.md`** - **Deepgram MVP 完成記錄**（2025-11-16）
+- `.serena/memories/deepgram-streaming-debugging-2025-11-16.md` - WebSocket 400 錯誤診斷
+
+**Phase 1 - Whisper 管線**:
+- **`.serena/memories/dynamic-time-sync-implementation-2025-11-15.md`** - **動態時間同步實作與 MVP 確認**（2025-11-15）
 - **`NewWay2.md`** - **WebM Header 修復完整記錄**（2025-11-11，Whisper 成功率 100%）
 - **`NewWay.md`** - **MediaRecorder 管線遷移完整記錄**（2025-11-11，瀏覽器凍結修復）
-- **`.serena/memories/phase1-testing-final-2025-11-11.md`** - **Phase 1 最終測試記錄**（WebM Header 修復前後對比）
-- **`.serena/memories/mediarecorder-migration-2025-11-11.md`** - **管線遷移技術報告**（含診斷方法論與深刻反思）
-- `.serena/memories/browser-freeze-debugging-2025-11-09.md` - 瀏覽器凍結問題診斷記錄（已修復）
 - `.serena/memories/phase1-completion-2025-11-09.md` - **Phase 1 完整記錄** (11 個模組詳細規格)
-- `.serena/memories/phase1-overlap-processor-completion-2025-11-09.md` - OverlapProcessor 完成記錄
-- `.serena/memories/critical-bug-fix-2025-11-09.md` - Content Script 時間同步修復
-- `.serena/memories/development-progress-2025-11-08.md` - 詳細開發進度記錄
-- `.serena/memories/project-status-2025-11-08.md` - 專案狀態總覽
-- `.serena/memories/testing-2025-11-08.md` - Extension 測試記錄
+- `.serena/memories/browser-freeze-debugging-2025-11-09.md` - 瀏覽器凍結問題診斷記錄
 
 ### 重要原始碼參考
 
-**Phase 0 基礎架構**:
-- `src/lib/crypto-utils.js` - 加密工具模組 (AES-GCM 實作)
-- `src/lib/api-key-manager.js` - API Key 管理與成本追蹤
-- `src/lib/errors.js` - 統一錯誤處理
-- `src/lib/config.js` - 全域配置 (CHUNK_CONFIG, WHISPER_CONFIG, OVERLAP_CONFIG)
-- `manifest.json` - Extension 配置 (Manifest V3)
+**Phase 2 Deepgram Streaming**:
+- `src/background/deepgram-stream-client.js` - **Deepgram WebSocket 客戶端**（即時串流核心）
+- `src/lib/deepgram-key-manager.js` - Deepgram API Key 管理
+- `src/offscreen/pcm-processor.js` - **AudioWorklet PCM 處理**（48kHz→16kHz）
+- `src/lib/config.js` - 全域配置（含 `DEEPGRAM_CONFIG`, `DEEPGRAM_MODELS`, `DEEPGRAM_LANGUAGES`）
 
-**Phase 1 音訊處理管線**:
-- `src/background/audio-capture.js` - 音訊擷取 (chrome.tabCapture)
-- `src/offscreen/offscreen.js` - **MediaRecorder 管線** (audio/webm chunk + Base64 傳輸)
+**Phase 1 Whisper 管線**:
 - `src/background/whisper-client.js` - Whisper API 整合
-- `src/background/subtitle-processor.js` - **OverlapProcessor** (核心去重與斷句)
+- `src/background/subtitle-processor.js` - **OverlapProcessor**（核心去重與斷句）
+- `src/offscreen/offscreen.js` - MediaRecorder 管線（audio/webm + Base64）
 - `src/lib/language-rules.js` - 多語言斷句規則
-- `src/lib/text-similarity.js` - Levenshtein Distance 相似度計算
 
-**已移除（死鎖元兇）**:
-- ~~`src/background/audio-chunker.js`~~ - ScriptProcessorNode 切塊（已移除）
-- ~~`src/background/mp3-encoder.js`~~ - MP3 編碼（已移除）
-- ~~`src/workers/mp3-encoder.worker.js`~~ - MP3 編碼 Worker（已移除）
+**Phase 0 基礎架構**:
+- `src/lib/crypto-utils.js` - 加密工具模組（AES-GCM 實作）
+- `src/lib/api-key-manager.js` - OpenAI API Key 管理
+- `src/lib/errors.js` - 統一錯誤處理
+- `manifest.json` - Extension 配置（Manifest V3）
 
-**Phase 1 字幕顯示**:
-- `src/content/content-script.js` - Content Script (VideoMonitor + SubtitleOverlay)
+**字幕顯示**:
+- `src/content/content-script.js` - Content Script（VideoMonitor + SubtitleOverlay）
 - `src/content/subtitle-overlay.css` - 字幕樣式
 
 **核心控制器**:
-- `src/background/service-worker.js` - **主控制器** (編排整個音訊處理流程)
-- `src/popup/popup.js` - Popup UI 邏輯
-
-**測試與 Demo**:
-- `tests/unit/overlap-processor.test.js` - OverlapProcessor 單元測試 (100% 覆蓋率)
-- `demo/overlap-processor-demo.html` - 互動測試頁面 (5 個測試)
+- `src/background/service-worker.js` - **主控制器**（Deepgram/Whisper 管線編排）
+- `src/popup/popup.js` - Popup UI 邏輯（雙 API Key + 模型語言選擇）
 
 ---
 
