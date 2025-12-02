@@ -124,7 +124,7 @@ class SubtitleService {
    */
   async disable() {
     if (!this.isActive) {
-      return;
+      return { success: true };  // 已停用，仍返回成功
     }
 
     const tabId = this.currentTabId;

@@ -93,8 +93,8 @@ export class LanguageRules {
       return false  // 完整句子，不合併
     }
 
-    // 檢查前一句是否以句中標點結束
-    const endsWithIncompletePunctuation = /[，、]$/.test(text1)
+    // 檢查前一句是否以句中標點結束（支援半形和全形逗號）
+    const endsWithIncompletePunctuation = /[,，、]$/.test(text1)
     if (endsWithIncompletePunctuation) {
       return true  // 句中標點，應該合併
     }

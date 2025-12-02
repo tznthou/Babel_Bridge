@@ -9,6 +9,7 @@
     "package": "npm run build && node scripts/package.js",
     "test": "vitest run",
     "test:unit": "vitest run --dir tests/unit",
+    "test:integration": "vitest run --dir tests/integration",
     "test:e2e": "playwright test",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src/",
@@ -26,7 +27,8 @@
     "prettier": "^3.1.1",
     "vite": "^5.0.11",
     "vite-plugin-web-extension": "^4.1.0",
-    "vitest": "^1.2.0"
+    "vitest": "^1.2.0",
+    "ws": "^8.18.3"
   },
   "engines": {
     "node": ">=18.0.0",

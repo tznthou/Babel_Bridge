@@ -432,7 +432,7 @@ npm run package
 ## 📅 開發里程碑 (Milestones)
 
 **當前狀態**: Phase 2 已完成 ✅ — 雙引擎架構（Deepgram + Whisper）
-**最後更新**: 2025-11-30
+**最後更新**: 2025-12-02（實體測試驗證完成）
 
 **核心價值**：
 - ✅ **雙引擎架構**：Deepgram 即時串流（2-3s）+ Whisper 高準確（5-7s）
@@ -589,6 +589,38 @@ npm run package
 - `fd0c44c` - 修復 WebSocket Schema Error 與語言設定（2025-11-16）
 - `09dd7bd` - 新增模型與語言選擇功能（2025-11-30）
 
+#### Phase 2.3: 實體測試驗證 ✅ (2025-12-02)
+
+**整合測試結果**（API 驗證）：
+- ✅ 12/12 測試通過
+- Nova-2：所有語言正常（含 multi）
+- Nova-3：multi, en-US, en, ja 正常；zh-TW/zh 返回 400（預期行為）
+
+**YouTube 實測結果**：
+
+| 測試場景 | 配置 | 結果 | 備註 |
+|----------|------|------|------|
+| 英文影片 (TED Talk) | Nova-2 + multi | ✅ 成功 | 延遲 2-3s，字幕流暢 |
+| 純中文影片 | Nova-2 + zh-TW | ✅ 成功 | 辨識準確 |
+| 中英夾雜影片 | Nova-2 + zh-TW | ❌ 失敗 | 英文變亂碼 |
+| 中英夾雜影片 | Nova-3 + multi | ❌ 失敗 | 回傳空白（multi 不含中文） |
+
+**⚠️ Deepgram 語言限制**：
+- `multi`（自動偵測）**不支援中文/韓文**
+- Nova-3 **不支援** `zh-TW`/`zh`（返回 HTTP 400）
+- **中英夾雜內容目前無解**：選中文英文亂碼，選自動偵測中文消失
+
+**Bug 修復**：
+1. **`disable()` 返回 undefined**：已修復，改為 `return { success: true }`
+2. **"Unknown message type" 錯誤**：Offscreen 不再回應不認識的訊息
+
+**Whisper 測試決議**：
+- ❌ 不進行 Whisper 實體測試
+- **理由**：5-7s 延遲違背即時目的，且無價格優勢（$0.006/min vs Deepgram $0.0043-0.0077/min）
+
+**待驗證**：
+- 🔲 Nova-3 + multi + 純英文影片（延後至需要時）
+
 ---
 
 ### Phase 3: UI 優化與翻譯功能 🔲 (待開發)
@@ -599,6 +631,23 @@ npm run package
 - 🔲 **雙層字幕**: 原文 + 翻譯同時顯示
 
 **驗收標準**: 字幕樣式可自訂，能同時顯示原文與翻譯字幕
+
+---
+
+### ⚠️ 已知問題 (Known Issues)
+
+以下問題**不影響主要功能**，可延後修復：
+
+| 問題 | 影響 | 優先度 |
+|------|------|--------|
+| **CSP 錯誤**: `offscreen.html` 有 inline script 違反 Content Security Policy | 診斷 log 不執行，功能正常 | 低 |
+| **PCM Frame Warning**: Service Worker 對 `DEEPGRAM_PCM_FRAME` 返回 `true` 但不回應 | Console warning，功能正常 | 低 |
+| **WebSocket Mock 測試**: 8 個單元測試因 fake timers 衝突 timeout | 整合測試正常，CI 較慢 | 低 |
+
+**詳細說明**：
+- CSP 錯誤：移除 `offscreen.html` 中的診斷用 inline script
+- PCM Frame：修改 Service Worker 對不需要回應的訊息不返回 `true`
+- Mock 測試：重寫 MockWebSocket 改為同步觸發
 
 ---
 

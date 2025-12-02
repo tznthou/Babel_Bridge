@@ -254,6 +254,61 @@ export const DEEPGRAM_LANGUAGES = [
 ];
 
 /**
+ * 辨識模式配置（場景導向）
+ * 隱藏 model/language 技術細節，用戶只需選擇辨識語言
+ */
+export const RECOGNITION_MODES = [
+  {
+    id: 'zh-TW',
+    name: '🇹🇼 繁體中文',
+    model: 'nova-2',
+    language: 'zh-TW',
+    hint: '最適合中文辨識',
+    cost: 0.0043,
+  },
+  {
+    id: 'zh',
+    name: '🇨🇳 简体中文',
+    model: 'nova-2',
+    language: 'zh',
+    hint: '最適合中文辨識',
+    cost: 0.0043,
+  },
+  {
+    id: 'en',
+    name: '🇺🇸 English',
+    model: 'nova-3',
+    language: 'en',
+    hint: '高準確度英文辨識',
+    cost: 0.0077,
+  },
+  {
+    id: 'ja',
+    name: '🇯🇵 日本語',
+    model: 'nova-3',
+    language: 'ja',
+    hint: '高準確度日文辨識',
+    cost: 0.0077,
+  },
+  {
+    id: 'ko',
+    name: '🇰🇷 한국어',
+    model: 'nova-2',
+    language: 'ko',
+    hint: '韓文辨識',
+    cost: 0.0043,
+  },
+  {
+    id: 'multi',
+    name: '🌐 多語言自動偵測',
+    model: 'nova-3',
+    language: 'multi',
+    hint: '英日德法俄等，不含中韓',
+    cost: 0.0077,
+  },
+];
+
+/**
  * AudioWorklet PCM 處理配置
  */
 export const AUDIO_WORKLET_CONFIG = {
@@ -279,6 +334,7 @@ export const STORAGE_KEYS = {
   DEEPGRAM_PROJECT_UUID: 'deepgram_project_uuid',
   DEEPGRAM_MODEL: 'deepgram_model', // 'nova-2' | 'nova-3'
   DEEPGRAM_LANGUAGE: 'deepgram_language', // 'multi' | 'en' | 'zh-TW' | ...
+  DEEPGRAM_RECOGNITION_MODE: 'deepgram_recognition_mode', // 場景導向模式 ID
 
   // 通用
   USER_SETTINGS: 'user_settings',

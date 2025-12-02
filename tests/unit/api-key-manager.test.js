@@ -15,16 +15,16 @@ describe('APIKeyManager', () => {
 
     it('應該拒絕無效格式', () => {
       const invalidKeys = [
-        'invalid-key',
-        'sk-tooshort',
-        'sk-' + 'a'.repeat(47), // 太短
-        'sk-' + 'a'.repeat(49), // 太長
-        'pk-' + 'a'.repeat(48), // 錯誤前綴
+        'invalid-key',           // 不以 sk- 開頭
+        'sk-tooshort',           // 長度不足 30 字元
+        'sk-' + 'a'.repeat(20),  // 長度不足 30 字元 (23 字元)
+        'pk-' + 'a'.repeat(48),  // 錯誤前綴
         '',
         null,
         undefined,
       ];
 
+      // 註：新版 OpenAI API Key 格式 (sk-proj-...) 可能較長，已移除長度上限檢查
       invalidKeys.forEach((key) => {
         expect(() => APIKeyManager.validateFormat(key)).toThrow(BabelBridgeError);
       });

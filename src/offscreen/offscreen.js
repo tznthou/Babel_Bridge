@@ -41,8 +41,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
 
     default:
-      console.warn('[Offscreen Deepgram] 未知訊息類型:', type);
-      sendResponse({ success: false, error: 'Unknown message type' });
+      // 不回應不認識的訊息，讓 Service Worker 處理
+      // console.warn('[Offscreen Deepgram] 未知訊息類型:', type);
       return false;
   }
 });

@@ -6,7 +6,7 @@
  * @module tests/unit/overlap-processor
  */
 
-import { describe, test, expect, beforeEach } from '@jest/globals'
+import { describe, test, expect, beforeEach } from 'vitest'
 import { OverlapProcessor } from '../../src/background/subtitle-processor.js'
 import {
   calculateSimilarity,
