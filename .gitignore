@@ -36,3 +36,6 @@ coverage/
 # AI 工具本機資料 (設定、記憶、接續文件一律不進版控)
 .claude/
 .serena/
+
+# MCP project config (local only)
+.mcp.json
