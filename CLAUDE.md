@@ -309,7 +309,7 @@ refactor: simplify error handling
    Whisper 無法保證相鄰音訊段的辨識結果在重疊區一致,需要人工比對去重與斷句優化。
 
 7. **為何使用 AES-GCM 加密 API Key**
-   防止惡意 Extension 或本地惡意軟體竊取 API Key。使用 AES-256-GCM (AEAD) 提供機密性與完整性保護,PBKDF2-100k 迭代符合 OWASP 2023 建議,瀏覽器指紋衍生金鑰無需使用者記憶密碼。安全評分: 96/100。
+   防止惡意 Extension 或本地惡意軟體竊取 API Key。使用 AES-256-GCM (AEAD) 提供機密性與完整性保護,PBKDF2-100k 迭代符合 OWASP 2023 建議,瀏覽器指紋衍生金鑰無需使用者記憶密碼。（註：專案早期文件曾標示「安全評分 96/100」，那是自評非第三方稽核結果，對外文件已移除該說法。）
 
 8. **為何使用動態時間查詢**（2025-11-15）
    累積計算（`captureTime + audioElapsed`）在暫停時產生 25-35s 誤差。改為 Whisper 完成後查詢 `video.currentTime` 往回推算（`currentTime - audioDuration`），timeDiff 穩定 0.7-2.5s。詳見 `service-worker.js`。
@@ -476,7 +476,7 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
 | **Phase 1** | 2025-11-15 | Whisper 管線、OverlapProcessor、動態時間同步、**MVP** |
 | **Phase 2** | 2025-11-30 | Deepgram Streaming、模型/語言選擇、**雙引擎架構** |
 
-詳細清單見 [README.md](README.md) § 開發里程碑
+各階段實作細節、測試數據與 commit 記錄見 [docs/MILESTONES.md](docs/MILESTONES.md)
 
 ### 待開發
 
@@ -488,11 +488,12 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
 ## 參考文件
 
 ### 核心文件
-- [README.md](README.md) - **專案架構與技術棧總覽（含完整原始碼清單）**
+- [README.md](README.md) - 專案總覽與技術架構（中文）／[README_EN.md](README_EN.md) - 英文版，兩版須同步更新
 - [CLAUDE.md](CLAUDE.md) - Claude 開發指引 (本文件)
 - [docs/PRD.md](docs/PRD.md) - 產品需求與使用者故事
 - [docs/SPEC.md](docs/SPEC.md) - 系統規格與 API 詳細定義
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) - 開發環境與工作流程
+- [docs/MILESTONES.md](docs/MILESTONES.md) - **各階段實作細節、測試數據、已知問題**
 - [docs/testing/](docs/testing/) - 測試指南（QUICKSTART 快速上手 / PHASE1 完整驗證）
 
 ### 開發記錄封存
@@ -520,4 +521,4 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
 | **配置** | `src/lib/config.js` | DEEPGRAM_CONFIG, WHISPER_CONFIG |
 | **Popup** | `src/popup/popup.js` | 雙 API Key + 模型語言選擇 |
 
-完整原始碼清單見 [README.md](README.md) § 相關文件
+模組職責分佈見 [README.md](README.md) § 專案結構
