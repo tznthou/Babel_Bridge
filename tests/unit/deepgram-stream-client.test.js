@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DeepgramStreamClient } from '../../src/background/deepgram-stream-client.js';
-import { BabelBridgeError, ErrorCodes } from '../../src/lib/errors.js';
+import { BabelBridgeError } from '../../src/lib/errors.js';
 
 // Mock WebSocket
 class MockWebSocket {
@@ -90,7 +90,7 @@ describe('DeepgramStreamClient', () => {
     // Mock CryptoUtils
     vi.mock('../../src/lib/crypto-utils.js', () => ({
       CryptoUtils: {
-        decrypt: vi.fn((ciphertext) =>
+        decrypt: vi.fn(() =>
           Promise.resolve('test_deepgram_key_12345678901234567890')
         ),
       },
@@ -99,12 +99,13 @@ describe('DeepgramStreamClient', () => {
     client = new DeepgramStreamClient();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // 先還原真實 timer，否則 close() 的清理會卡在未推進的 fake timer 上
+    vi.useRealTimers();
     global.WebSocket = originalWebSocket;
     if (client) {
-      client.close();
+      await client.close();
     }
-    vi.clearAllTimers();
   });
 
   describe('建構函數', () => {
@@ -323,7 +324,8 @@ describe('DeepgramStreamClient', () => {
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('音訊資料為空')
       );
-      expect(client.websocket.sentMessages.length).toBe(1); // 只有認證訊息
+      // 認證改走 WebSocket subprotocols，且不送 configure 訊息，故連線後應為空
+      expect(client.websocket.sentMessages.length).toBe(0);
     });
 
     it('應該累積發送的音訊位元組數', () => {
@@ -335,46 +337,36 @@ describe('DeepgramStreamClient', () => {
     });
   });
 
-  describe('KeepAlive 機制', () => {
+  // Deepgram 音訊串流不需要 KeepAlive，持續的 audio data 本身就是 keep-alive。
+  // 送 text message 反而會觸發 SchemaError，因此 connect() 刻意不呼叫 startKeepAlive()。
+  // 這組測試守的就是「不要把它加回來」。
+  describe('KeepAlive 機制（刻意停用）', () => {
     beforeEach(async () => {
-      vi.useFakeTimers();
+      // 必須先用真實 timer 完成連線：MockWebSocket 以 setTimeout 模擬非同步 onopen，
+      // 若先啟用 fake timer，init() 會永遠等不到連線而 timeout
       await client.init();
+      vi.useFakeTimers();
     });
 
-    afterEach(() => {
-      vi.useRealTimers();
+    it('不應定期發送 KeepAlive text message', async () => {
+      expect(client.websocket.sentMessages.length).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(client.websocket.sentMessages.length).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(client.websocket.sentMessages.length).toBe(0);
     });
 
-    it('應該定期發送 KeepAlive 訊息', async () => {
-      // 初始狀態：只有認證訊息
-      expect(client.websocket.sentMessages.length).toBe(1);
-
-      // 前進 5 秒
+    it('不應建立 KeepAlive timer', async () => {
       await vi.advanceTimersByTimeAsync(5000);
-
-      // 應該發送了 KeepAlive
-      expect(client.websocket.sentMessages.length).toBe(2);
-      expect(
-        JSON.parse(client.websocket.sentMessages[1])
-      ).toEqual({ type: 'KeepAlive' });
-
-      // 再前進 5 秒
-      await vi.advanceTimersByTimeAsync(5000);
-
-      // 應該再發送一次
-      expect(client.websocket.sentMessages.length).toBe(3);
-    });
-
-    it('應該在關閉時停止 KeepAlive', async () => {
-      await vi.advanceTimersByTimeAsync(5000);
-      expect(client.websocket.sentMessages.length).toBe(2);
+      expect(client.keepAliveTimer).toBeNull();
 
       await client.close();
-      await vi.advanceTimersByTimeAsync(100);
-
-      // 關閉後不應再發送
       await vi.advanceTimersByTimeAsync(10000);
-      expect(client.websocket.sentMessages.length).toBe(2);
+
+      expect(client.keepAliveTimer).toBeNull();
+      expect(client.websocket).toBeNull();
     });
   });
 
@@ -392,12 +384,9 @@ describe('DeepgramStreamClient', () => {
 
   describe('關閉連線', () => {
     beforeEach(async () => {
-      vi.useFakeTimers();
+      // 同上：先連線再切 fake timer
       await client.init();
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
+      vi.useFakeTimers();
     });
 
     it('應該正確關閉連線並清理資源', async () => {
@@ -437,36 +426,32 @@ describe('DeepgramStreamClient', () => {
   });
 
   describe('重連機制', () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
     it('應該在非正常關閉時嘗試重連', async () => {
+      // 先連線再切 fake timer，否則 init() 等不到 MockWebSocket 的 onopen
       await client.init();
+      vi.useFakeTimers();
 
       // 模擬非正常關閉
       client.websocket.close(1006, 'Abnormal closure');
       await vi.advanceTimersByTimeAsync(100);
 
       expect(client.reconnectAttempts).toBe(1);
-    }, 10000);
+    });
 
     it('應該在正常關閉時不重連', async () => {
       await client.init();
+      vi.useFakeTimers();
 
       // 正常關閉
       client.websocket.close(1000, 'Normal closure');
       await vi.advanceTimersByTimeAsync(100);
 
       expect(client.reconnectAttempts).toBe(0);
-    }, 10000);
+    });
 
     it('應該在超過最大重連次數後停止', async () => {
       await client.init();
+      vi.useFakeTimers();
 
       // 強制設定重連次數
       client.reconnectAttempts = 5;
@@ -477,7 +462,7 @@ describe('DeepgramStreamClient', () => {
 
       // 不應再嘗試重連
       expect(client.reconnectAttempts).toBe(5);
-    }, 10000);
+    });
   });
 
   describe('getStats', () => {
