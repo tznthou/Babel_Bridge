@@ -16,6 +16,14 @@ import WebSocket from 'ws';
 // 從環境變數讀取 API Key
 const API_KEY = process.env.DEEPGRAM_API_KEY;
 
+// 被跳過時給出可執行的提示，避免看到 skipped 卻不知道少跑了什麼
+if (!API_KEY) {
+  console.log(
+    '\n⏭️  跳過 Deepgram 連線測試（未設定 DEEPGRAM_API_KEY）\n' +
+      '   啟用方式：DEEPGRAM_API_KEY=your_key npm run test:integration\n'
+  );
+}
+
 // Deepgram WebSocket 基礎 URL
 const WEBSOCKET_BASE_URL = 'wss://api.deepgram.com/v1/listen';
 
@@ -225,21 +233,14 @@ function formatResult(testCase, result) {
 // 測試套件
 // ============================================================================
 
-describe('Deepgram API Connection Validation', () => {
+// 缺 API Key 時整組跳過。這組測試需要真實憑證才能連線，
+// 缺 key 屬於「未執行」而非「失敗」——若照舊 throw，npm run test 會永遠是紅的，
+// 測試結果就失去了作為訊號的意義。
+describe.skipIf(!API_KEY)('Deepgram API Connection Validation', () => {
   // 儲存所有測試結果，最後輸出摘要
   const results = [];
 
   beforeAll(() => {
-    if (!API_KEY) {
-      console.error('\n' + '='.repeat(60));
-      console.error('❌ DEEPGRAM_API_KEY 環境變數未設定');
-      console.error('');
-      console.error('使用方式：');
-      console.error('  DEEPGRAM_API_KEY=your_key npm run test:integration');
-      console.error('='.repeat(60) + '\n');
-      throw new Error('DEEPGRAM_API_KEY environment variable is required');
-    }
-
     console.log('\n' + '='.repeat(60));
     console.log('🔍 Deepgram API 連線驗證測試');
     console.log('='.repeat(60));
