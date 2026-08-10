@@ -27,19 +27,12 @@ coverage/
 # Environment
 .env
 .env.local
+.env.*.local
 
 # Temporary files
 *.tmp
 .cache/
 
-# Development notes & test scripts
-NewWay*.md
-ai_coding_*.md
-diagnostic-script.js
-test-message.js
-
-# AI Assistant memories
+# AI 工具本機資料 (設定、記憶、接續文件一律不進版控)
+.claude/
 .serena/
-
-# Claude Code personal settings
-.claude/settings.local.json
