@@ -16,6 +16,18 @@ import WebSocket from 'ws';
 // 從環境變數讀取 API Key
 const API_KEY = process.env.DEEPGRAM_API_KEY;
 
+// npm run test:integration 會帶上這個旗標：既然是明確要求跑整合測試，
+// 缺金鑰就該是失敗而非全綠。npm run test 不帶旗標，缺金鑰改為跳過，
+// 才不會讓沒有金鑰的一般開發者永遠看到紅字。
+const REQUIRE_KEY = !!process.env.REQUIRE_DEEPGRAM_KEY;
+
+if (!API_KEY && REQUIRE_KEY) {
+  throw new Error(
+    'DEEPGRAM_API_KEY 未設定：npm run test:integration 需要真實金鑰才能驗證連線。\n' +
+      '使用方式：DEEPGRAM_API_KEY=your_key npm run test:integration'
+  );
+}
+
 // 被跳過時給出可執行的提示，避免看到 skipped 卻不知道少跑了什麼
 if (!API_KEY) {
   console.log(

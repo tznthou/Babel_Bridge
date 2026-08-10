@@ -9,7 +9,7 @@
     "package": "npm run build && node scripts/package.js",
     "test": "vitest run",
     "test:unit": "vitest run --dir tests/unit",
-    "test:integration": "vitest run --dir tests/integration",
+    "test:integration": "REQUIRE_DEEPGRAM_KEY=1 vitest run --dir tests/integration",
     "test:e2e": "playwright test",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src/",

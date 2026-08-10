@@ -100,7 +100,9 @@ describe('DeepgramStreamClient', () => {
   });
 
   afterEach(async () => {
-    // 先還原真實 timer，否則 close() 的清理會卡在未推進的 fake timer 上
+    // 先還原真實 timer。close() 本身是同步的、不會卡；真正的風險是某個 it
+    // 結束時仍停在 fake timer 狀態，外溢到下一個測試的 client.init()，
+    // 讓它等不到 MockWebSocket 的 onopen 而真的卡到 vitest timeout。
     vi.useRealTimers();
     global.WebSocket = originalWebSocket;
     if (client) {
@@ -447,6 +449,7 @@ describe('DeepgramStreamClient', () => {
     it('應該在非正常關閉時嘗試重連', async () => {
       // 先連線再切 fake timer，否則 init() 等不到 MockWebSocket 的 onopen
       await client.init();
+      const originalSocket = client.websocket;
       vi.useFakeTimers();
 
       // 模擬非正常關閉
@@ -454,6 +457,15 @@ describe('DeepgramStreamClient', () => {
       await vi.advanceTimersByTimeAsync(100);
 
       expect(client.reconnectAttempts).toBe(1);
+
+      // 只驗計數器不夠：scheduleReconnect() 把 reconnectAttempts++ 放在 setTimeout 之外
+      // 同步執行，真正的 connect() 要等 RECONNECT_DELAY(1000ms) 才觸發。
+      // 若只推進 100ms，即使 connect() 整段被刪除本測試仍會通過。
+      await vi.advanceTimersByTimeAsync(1200);
+
+      // 確認真的重新連上：換了新的 socket 實例、狀態回到 connected
+      expect(client.websocket).not.toBe(originalSocket);
+      expect(client.getState()).toBe('connected');
     });
 
     it('應該在正常關閉時不重連', async () => {
