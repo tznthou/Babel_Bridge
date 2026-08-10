@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> 新 session 開始前，先讀取 `.claude/RESUME.md`（開發進度接續文件，未進版控）。
+
 ## 專案概述
 
 Babel Bridge 是一個 Chrome Extension (Manifest V3),為網路影片提供 AI 驅動的即時字幕與多語言翻譯。
@@ -158,7 +160,7 @@ interface Message {
 - `ENABLE_SUBTITLES`: Popup → Background (啟用功能)
 - `DISABLE_SUBTITLES`: Popup → Background (停用功能)
 
-詳細規格見 [SPEC.md](SPEC.md) § 4.1
+詳細規格見 [SPEC.md](docs/SPEC.md) § 4.1
 
 ### 錯誤處理
 
@@ -177,7 +179,7 @@ class BabelBridgeError extends Error {
 
 所有模組的錯誤應傳遞至 `ErrorHandler.handle(error)` 統一處理,包含重試邏輯與使用者提示。
 
-錯誤碼表見 [SPEC.md](SPEC.md) § 5.2
+錯誤碼表見 [SPEC.md](docs/SPEC.md) § 5.2
 
 ### API Key 管理
 
@@ -261,7 +263,7 @@ refactor: simplify error handling
 - 逐步加入功能，精確定位凍結/錯誤發生點
 - 每一步都記錄 console.log，確保執行流程透明
 
-**案例**: 瀏覽器凍結問題（2025-11-09~11）— ScriptProcessorNode 在 Offscreen Document 觸發死鎖，解法是直接改用 MediaRecorder。詳見 `NewWay.md`。
+**案例**: 瀏覽器凍結問題（2025-11-09~11）— ScriptProcessorNode 在 Offscreen Document 觸發死鎖，解法是直接改用 MediaRecorder。詳見 [docs/archive/NewWay.md](docs/archive/NewWay.md)。
 
 **教訓**: 架構選擇錯誤 > 實作細節錯誤。優先替換問題模組，而非修補症狀。
 
@@ -431,11 +433,11 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
 
 2. **瀏覽器凍結問題**（2025-11-09~11 修復）
    - 根本原因：ScriptProcessorNode 在 Offscreen Document 觸發死鎖
-   - 解決方案：改用 MediaRecorder 管線（詳見 `NewWay.md`）
+   - 解決方案：改用 MediaRecorder 管線（詳見 [docs/archive/NewWay.md](docs/archive/NewWay.md)）
 
 3. **WebM Header 缺失問題**（2025-11-11 修復）
    - 原因：MediaRecorder timeslice chunk1+ 缺 EBML header
-   - 解決：自動補強 header，Whisper 成功率 4.3% → 100%（詳見 `NewWay2.md`）
+   - 解決：自動補強 header，Whisper 成功率 4.3% → 100%（詳見 [docs/archive/NewWay2.md](docs/archive/NewWay2.md)）
 
 ### 💡 未來改進方向
 
@@ -488,18 +490,23 @@ document.querySelector('#babel-bridge-subtitle-overlay')  // 檢查字幕容器
 ### 核心文件
 - [README.md](README.md) - **專案架構與技術棧總覽（含完整原始碼清單）**
 - [CLAUDE.md](CLAUDE.md) - Claude 開發指引 (本文件)
-- [PRD.md](PRD.md) - 產品需求與使用者故事
-- [SPEC.md](SPEC.md) - 系統規格與 API 詳細定義
+- [docs/PRD.md](docs/PRD.md) - 產品需求與使用者故事
+- [docs/SPEC.md](docs/SPEC.md) - 系統規格與 API 詳細定義
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) - 開發環境與工作流程
+- [docs/testing/](docs/testing/) - 測試指南（QUICKSTART 快速上手 / PHASE1 完整驗證）
 
-### 開發記錄 (Serena 記憶)
+### 開發記錄封存
 
-**Phase 2 - Deepgram Streaming**:
-- `.serena/memories/deepgram-model-language-selection-2025-11-30.md` - **模型與語言選擇功能**
-- `.serena/memories/deepgram-streaming-mvp-complete-2025-11-16.md` - **Deepgram MVP 完成**
+[docs/archive/](docs/archive/) 保留當時原貌的問題排查記錄，用途是回答「當初為何這樣選」，不是查現行架構：
 
-**Phase 1 - Whisper 管線**:
-- `.serena/memories/dynamic-time-sync-implementation-2025-11-15.md` - **動態時間同步 + MVP**
-- `NewWay.md` - MediaRecorder 管線遷移（瀏覽器凍結修復）
+- [NewWay.md](docs/archive/NewWay.md) - MediaRecorder 管線遷移（瀏覽器凍結修復）
+- [NewWay2.md](docs/archive/NewWay2.md) - WebM Header 補強（Whisper 成功率 4.3% → 100%）
+- [NewWay3.md](docs/archive/NewWay3.md) - Deepgram 串流修復接手指南
+- [ai-coding-realtime-spec-v3.md](docs/archive/ai-coding-realtime-spec-v3.md) - Streaming STT 改版規格草案
+
+### 本機記錄（未進版控）
+- `.serena/memories/` - Deepgram 模型語言選擇、Deepgram MVP、動態時間同步等實作記錄
+- `.claude/RESUME.md` - 開發進度接續文件
 
 ### 關鍵原始碼（快速參考）
 

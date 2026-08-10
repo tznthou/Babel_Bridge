@@ -236,7 +236,7 @@ Whisper API 處理:   2-3 秒
 | 跨 Context 傳輸 | Base64 / Int16 Array | Deepgram 用 PCM，Whisper 用 Base64 |
 | 儲存 | chrome.storage.local | 加密儲存 API Key 與用戶設定 |
 | 建置工具 | Vite | 現代化打包與開發體驗 |
-| 測試框架 | Jest / Playwright | 單元測試與 E2E 測試 (待實作) |
+| 測試框架 | Vitest / Playwright | 單元與整合測試已建立，E2E 待實作 |
 
 ---
 
@@ -261,31 +261,47 @@ Babel Bridge/
 │   │   ├── popup.html               # ✅ 控制面板 UI (含模型/語言選擇)
 │   │   ├── popup.js                 # ✅ 面板邏輯 (雙 API Key 管理)
 │   │   └── popup.css                # ✅ 面板樣式
-│   ├── lib/                         # 📦 核心函式庫
-│   │   ├── errors.js                # ✅ 統一錯誤處理 (BabelBridgeError)
-│   │   ├── error-handler.js         # ✅ 錯誤處理器
-│   │   ├── config.js                # ✅ 全域配置 (含 DEEPGRAM_CONFIG)
-│   │   ├── api-key-manager.js       # ✅ OpenAI API Key 管理
-│   │   ├── deepgram-key-manager.js  # ✅ Deepgram API Key 管理
-│   │   ├── crypto-utils.js          # ✅ 加密工具 (AES-GCM + PBKDF2)
-│   │   ├── language-rules.js        # ✅ 多語言斷句規則
-│   │   └── text-similarity.js       # ✅ Levenshtein Distance 相似度計算
-│   └── manifest.json                # ✅ Extension 配置 (Manifest V3)
-├── dist/                            # 建置輸出資料夾 (由 Vite 生成)
-├── docs/
+│   └── lib/                         # 📦 核心函式庫
+│       ├── errors.js                # ✅ 統一錯誤處理 (BabelBridgeError)
+│       ├── error-handler.js         # ✅ 錯誤處理器
+│       ├── config.js                # ✅ 全域配置 (含 DEEPGRAM_CONFIG)
+│       ├── api-key-manager.js       # ✅ OpenAI API Key 管理
+│       ├── deepgram-key-manager.js  # ✅ Deepgram API Key 管理
+│       ├── crypto-utils.js          # ✅ 加密工具 (AES-GCM + PBKDF2)
+│       ├── language-rules.js        # ✅ 多語言斷句規則
+│       └── text-similarity.js       # ✅ Levenshtein Distance 相似度計算
+├── tests/                           # 📦 測試
+│   ├── unit/                        # ✅ 單元測試 (Vitest)
+│   ├── integration/                 # ✅ 整合測試 (需 API Key，缺 key 自動跳過)
+│   └── e2e/                         # 🔲 E2E 測試 (Playwright，待實作)
+├── docs/                            # 📦 專案文件
 │   ├── PRD.md                       # ✅ 產品需求文件
 │   ├── SPEC.md                      # ✅ 系統規格文件
-│   ├── CLAUDE.md                    # ✅ Claude 開發指引
-│   └── NewWay.md                    # ✅ MediaRecorder 管線遷移記錄
-├── .serena/                         # AI 記憶檔案 (不納入版控)
-│   └── memories/
-│       ├── deepgram-streaming-mvp-complete-2025-11-16.md  # ✅ Deepgram MVP 完成
-│       ├── deepgram-model-language-selection-2025-11-30.md # ✅ 模型語言選擇
-│       ├── mediarecorder-migration-2025-11-11.md
-│       └── ...更多記憶檔案
+│   ├── DEVELOPMENT.md               # ✅ 開發環境與工作流程
+│   ├── testing/                     # ✅ 測試指南
+│   │   ├── TESTING_QUICKSTART.md    #    快速上手
+│   │   └── TESTING_PHASE1.md        #    Phase 1 完整驗證
+│   └── archive/                     # ✅ 開發記錄封存 (保留當時原貌)
+│       ├── NewWay.md                #    MediaRecorder 管線遷移
+│       ├── NewWay2.md               #    WebM Header 補強
+│       ├── NewWay3.md               #    Deepgram 串流修復接手指南
+│       └── ai-coding-realtime-spec-v3.md  # Streaming STT 規格草案
+├── scripts/                         # 📦 建置與除錯腳本
+│   ├── package.js                   # ✅ Chrome Web Store 打包
+│   ├── fix-paths.js                 # ✅ 建置後路徑修正
+│   └── debug/                       # ✅ DevTools Console 診斷工具
+│       ├── diagnostic-script.js     #    字幕顯示管線診斷
+│       └── test-message.js          #    訊息傳遞驗證
+├── demo/                            # 📦 OverlapProcessor 互動示範頁
+├── icons/                           # 📦 Extension 圖示
+├── dist/                            # 建置輸出資料夾 (由 Vite 生成，不納入版控)
+├── .serena/ · .claude/              # AI 工具本機資料 (不納入版控)
 ├── .gitignore                       # ✅ Git 忽略清單
+├── manifest.json                    # ✅ Extension 配置 (Manifest V3)
 ├── package.json                     # ✅ 專案配置
 ├── vite.config.js                   # ✅ Vite 建置配置
+├── vitest.config.js                 # ✅ Vitest 測試配置
+├── CLAUDE.md                        # ✅ Claude Code 開發指引
 ├── README.md                        # 本檔案
 └── LICENSE                          # ✅ MIT 授權
 ```
@@ -658,22 +674,25 @@ npm run package
 |------|------|
 | [`README.md`](./README.md) | 專案總覽與技術架構 (本檔) |
 | [`CLAUDE.md`](./CLAUDE.md) | Claude Code 開發指引 (含技術決策、規範、troubleshooting) |
-| [`PRD.md`](./PRD.md) | 產品需求與使用者故事 |
-| [`SPEC.md`](./SPEC.md) | 系統規格與 API 契約 |
+| [`docs/PRD.md`](./docs/PRD.md) | 產品需求與使用者故事 |
+| [`docs/SPEC.md`](./docs/SPEC.md) | 系統規格與 API 契約 |
+| [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) | 開發環境與工作流程 |
+| [`docs/testing/`](./docs/testing/) | 測試指南（QUICKSTART 快速上手 / PHASE1 完整驗證） |
 
-### 開發記錄 (Serena AI 記憶)
+### 開發記錄封存
 
-**Phase 2 - Deepgram Streaming**:
-- **`.serena/memories/deepgram-model-language-selection-2025-11-30.md`** - **模型與語言選擇功能實作**（2025-11-30）
-- **`.serena/memories/deepgram-streaming-mvp-complete-2025-11-16.md`** - **Deepgram MVP 完成記錄**（2025-11-16）
-- `.serena/memories/deepgram-streaming-debugging-2025-11-16.md` - WebSocket 400 錯誤診斷
+[`docs/archive/`](./docs/archive/) 保留當時原貌的問題排查記錄，回答「當初為何這樣選」：
 
-**Phase 1 - Whisper 管線**:
-- **`.serena/memories/dynamic-time-sync-implementation-2025-11-15.md`** - **動態時間同步實作與 MVP 確認**（2025-11-15）
-- **`NewWay2.md`** - **WebM Header 修復完整記錄**（2025-11-11，Whisper 成功率 100%）
-- **`NewWay.md`** - **MediaRecorder 管線遷移完整記錄**（2025-11-11，瀏覽器凍結修復）
-- `.serena/memories/phase1-completion-2025-11-09.md` - **Phase 1 完整記錄** (11 個模組詳細規格)
-- `.serena/memories/browser-freeze-debugging-2025-11-09.md` - 瀏覽器凍結問題診斷記錄
+| 記錄 | 日期 | 主題 |
+|------|------|------|
+| [`NewWay.md`](./docs/archive/NewWay.md) | 2025-11-09~11 | **MediaRecorder 管線遷移**（瀏覽器凍結修復） |
+| [`NewWay2.md`](./docs/archive/NewWay2.md) | 2025-11-11 | **WebM Header 補強**（Whisper 成功率 4.3% → 100%） |
+| [`NewWay3.md`](./docs/archive/NewWay3.md) | 2025-11-16 | Deepgram 串流修復接手指南 |
+| [`ai-coding-realtime-spec-v3.md`](./docs/archive/ai-coding-realtime-spec-v3.md) | 2025-11-16 | Streaming STT 改版規格草案 |
+
+### 本機記錄（未進版控）
+
+`.serena/memories/` 存有各階段實作記錄，僅在開發者本機：Deepgram 模型語言選擇、Deepgram MVP、WebSocket 400 診斷、動態時間同步、Phase 1 完整記錄（11 個模組）、瀏覽器凍結診斷。
 
 ### 重要原始碼參考
 
