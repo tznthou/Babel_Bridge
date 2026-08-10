@@ -140,8 +140,10 @@ export class DeepgramStreamClient {
       // 等待連線成功
       await this.waitForConnection();
 
-      // Deepgram 音訊串流不需要 KeepAlive（持續的 audio data 本身就是 keep-alive）
-      // 移除 startKeepAlive() 以避免發送 text message 導致 SchemaError
+      // 影片暫停時沒有音訊送出，Deepgram 會在 10 秒無資料後以 NET-0001 關閉連線。
+      // KeepAlive 以 text frame 送 {"type":"KeepAlive"}，是官方指定的維持方式，
+      // 與先前造成 SchemaError 的自訂 configure 訊息無關（後者已移除，見 handleOpen）。
+      this.startKeepAlive();
 
       // 重置重連計數
       this.reconnectAttempts = 0;
@@ -234,13 +236,12 @@ export class DeepgramStreamClient {
    * 處理 WebSocket 開啟事件
    * @private
    */
-  handleOpen(event) {
+  handleOpen() {
     console.log('[DeepgramStreamClient] 📡 WebSocket 已開啟');
     this.updateState(ConnectionState.CONNECTED);
 
-    // 注意：Deepgram WebSocket API 不接受 JSON configure 訊息
-    // 所有配置應通過 URL query parameters 傳遞（已在 buildWebSocketUrl() 完成）
-    // this.sendConfigurationMessage(); // ← 移除，會導致 SchemaError
+    // 不要在這裡送 { type: 'configure' } 之類的設定訊息，Deepgram 會回 SchemaError。
+    // 所有辨識參數一律走 URL query string（見 buildWebSocketUrl()）。
   }
 
   /**
@@ -347,45 +348,6 @@ export class DeepgramStreamClient {
   }
 
   /**
-   * 傳送 Deepgram 設定訊息
-   * @private
-   */
-  sendConfigurationMessage() {
-    if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
-      console.warn('[DeepgramStreamClient] ⚠️ WebSocket 尚未開啟，無法傳送設定');
-      return;
-    }
-
-    const configMessage = {
-      type: 'configure',
-      encoding: DEEPGRAM_CONFIG.ENCODING,
-      sample_rate: DEEPGRAM_CONFIG.SAMPLE_RATE,
-      channels: DEEPGRAM_CONFIG.CHANNELS,
-      multichannel: !!DEEPGRAM_CONFIG.MULTICHANNEL,
-      interim_results: !!DEEPGRAM_CONFIG.INTERIM_RESULTS,
-      punctuate: !!DEEPGRAM_CONFIG.PUNCTUATE,
-      smart_format: !!DEEPGRAM_CONFIG.SMART_FORMAT,
-      endpointing: DEEPGRAM_CONFIG.ENDPOINTING,
-    };
-
-    if (DEEPGRAM_CONFIG.DETECT_LANGUAGE) {
-      configMessage.detect_language = true;
-      if (Array.isArray(DEEPGRAM_CONFIG.LANGUAGE_HINTS) && DEEPGRAM_CONFIG.LANGUAGE_HINTS.length > 0) {
-        configMessage.languages = DEEPGRAM_CONFIG.LANGUAGE_HINTS;
-      }
-    } else if (DEEPGRAM_CONFIG.LANGUAGE) {
-      configMessage.language = DEEPGRAM_CONFIG.LANGUAGE;
-    }
-
-    try {
-      this.websocket.send(JSON.stringify(configMessage));
-      console.log('[DeepgramStreamClient] ⚙️ 已傳送設定訊息', configMessage);
-    } catch (error) {
-      console.error('[DeepgramStreamClient] ❌ 傳送設定訊息失敗:', error);
-    }
-  }
-
-  /**
    * 處理 WebSocket 錯誤
    * @private
    */
@@ -461,6 +423,10 @@ export class DeepgramStreamClient {
 
   /**
    * 啟動 KeepAlive 機制
+   *
+   * 官方建議間隔 3-5 秒，用以避開無音訊 10 秒後的 NET-0001 斷線。
+   * 必須以 text frame 傳送，送成 binary 會被錯誤解讀。
+   *
    * @private
    */
   startKeepAlive() {

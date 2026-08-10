@@ -337,36 +337,54 @@ describe('DeepgramStreamClient', () => {
     });
   });
 
-  // Deepgram 音訊串流不需要 KeepAlive，持續的 audio data 本身就是 keep-alive。
-  // 送 text message 反而會觸發 SchemaError，因此 connect() 刻意不呼叫 startKeepAlive()。
-  // 這組測試守的就是「不要把它加回來」。
-  describe('KeepAlive 機制（刻意停用）', () => {
+  // 影片暫停時無音訊，Deepgram 會在 10 秒後以 NET-0001 斷線，
+  // 因此連線期間需持續送 KeepAlive text frame 維持連線。
+  describe('KeepAlive 機制', () => {
     beforeEach(async () => {
-      // 必須先用真實 timer 完成連線：MockWebSocket 以 setTimeout 模擬非同步 onopen，
-      // 若先啟用 fake timer，init() 會永遠等不到連線而 timeout
-      await client.init();
+      // 這組與其他 describe 相反，必須「全程」在 fake timer 下完成連線：
+      // KeepAlive 的 setInterval 建立於 connect() 之中，若先以真實 timer 連線再切換，
+      // 該 interval 會留在真實時鐘上，advanceTimersByTime 永遠推不到它。
       vi.useFakeTimers();
+      const initPromise = client.init();
+      // 推進 MockWebSocket 模擬 onopen 的 10ms 與 waitForConnection 輪詢的 100ms
+      await vi.advanceTimersByTimeAsync(200);
+      await initPromise;
     });
 
-    it('不應定期發送 KeepAlive text message', async () => {
+    it('應該定期發送 KeepAlive 訊息', async () => {
+      // 連線建立後尚未觸發任何傳送（認證走 subprotocols，不佔訊息）
       expect(client.websocket.sentMessages.length).toBe(0);
 
       await vi.advanceTimersByTimeAsync(5000);
-      expect(client.websocket.sentMessages.length).toBe(0);
 
-      await vi.advanceTimersByTimeAsync(10000);
-      expect(client.websocket.sentMessages.length).toBe(0);
+      expect(client.websocket.sentMessages.length).toBe(1);
+      expect(JSON.parse(client.websocket.sentMessages[0])).toEqual({
+        type: 'KeepAlive',
+      });
+
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(client.websocket.sentMessages.length).toBe(2);
     });
 
-    it('不應建立 KeepAlive timer', async () => {
+    it('應該以 text frame 傳送而非 binary', async () => {
       await vi.advanceTimersByTimeAsync(5000);
-      expect(client.keepAliveTimer).toBeNull();
+
+      // 送成 binary 會被 Deepgram 錯誤解讀，必須是字串
+      expect(typeof client.websocket.sentMessages[0]).toBe('string');
+    });
+
+    it('應該在關閉時停止 KeepAlive', async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+
+      // close() 會將 client.websocket 設為 null，先留住參考才能驗證後續無新訊息
+      const ws = client.websocket;
+      expect(ws.sentMessages.length).toBe(1);
 
       await client.close();
-      await vi.advanceTimersByTimeAsync(10000);
+      await vi.advanceTimersByTimeAsync(15000);
 
       expect(client.keepAliveTimer).toBeNull();
-      expect(client.websocket).toBeNull();
+      expect(ws.sentMessages.length).toBe(1);
     });
   });
 

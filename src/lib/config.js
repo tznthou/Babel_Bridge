@@ -190,8 +190,7 @@ export const DEEPGRAM_CONFIG = {
   // 模型設定
   MODEL: 'nova-2', // Nova-2 標準模型
   LANGUAGE: 'zh-TW', // 預設繁體中文（Nova-2 不支援 multi，僅 Nova-3 支援）
-  DETECT_LANGUAGE: false, // streaming 不支援 detect_language 參數
-  // LANGUAGE_HINTS: ['en', 'zh', 'zh-TW', 'zh-CN'], // 偵測優先語系（auto detect 時使用）
+  // 註：streaming 不支援 detect_language 參數，語言自動偵測請改用 Nova-3 的 language=multi
   MULTICHANNEL: false, // 強制視為單聲道，避免 channel_index=[0,1]
 
   // 音訊格式
