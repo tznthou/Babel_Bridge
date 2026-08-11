@@ -179,8 +179,47 @@ Whisper API 處理     2-3 秒
 
 | 問題 | 影響 | 優先度 |
 |------|------|--------|
-| `offscreen.html` 第 8 行有 inline `<script>`，違反 CSP | 該段診斷 log 不執行，主功能正常 | 低 |
 | 中英夾雜內容無可用配置（見 Phase 2.3） | 雙語影片辨識品質差 | 中 |
+| 整體測試覆蓋率 41.47%，未達 70% 目標 | 六個模組完全無測試（見下） | 中 |
 | `tests/e2e/` 為空，Playwright 尚未寫任何測試 | 無端對端自動化驗證 | 中 |
+| Deepgram 延遲「2-3 秒」未經實測，且未區分 interim first-paint 與 final 定版 | 對外數據無依據，也影響 Phase 3 的 UI 決策 | 中 |
+| `vitest.config.js` 未排除 `scripts/`，一次性腳本計入覆蓋率分母 | 整體數字被低估 | 低 |
+| `offscreen.html` 第 8 行有 inline `<script>`，違反 CSP | 該段診斷 log 不執行，主功能正常 | 低 |
+| MCP chrome-devtools 控制的 Chrome 無法載入 Extension | 只能用正常 Chrome 視窗手動測試 | 低 |
 
-已修復但尚未合併至 master 的項目記錄在對應的 PR 中。
+### 覆蓋率現況（2026-08-11 實測）
+
+| 模組 | Stmts | 備註 |
+|------|------:|------|
+| `config.js` | 100% | |
+| `subtitle-processor.js` | 93.5% | OverlapProcessor，早期文件誤記為 100% |
+| `deepgram-stream-client.js` | 90.8% | |
+| `text-similarity.js` | 89.1% | |
+| `deepgram-key-manager.js` | 85.8% | |
+| `errors.js` | 85.3% | |
+| `language-rules.js` | 67.8% | |
+| `service-worker.js` | 62.2% | |
+| `audio-chunker.js` | 42.5% | |
+| `api-key-manager.js` | 42.3% | |
+| `crypto-utils.js` | 27.5% | |
+| `content-script.js`、`popup.js`、`offscreen.js`、`pcm-processor.js`、`whisper-client.js`、`audio-capture.js`、`error-handler.js` | **0%** | 完全無測試 |
+
+---
+
+## 未來改進方向
+
+尚未排程，記錄下來避免遺忘。
+
+**加密**
+- 支援使用者自訂密碼（可選，補足瀏覽器指紋換裝置就失效的缺點）
+- API Key 輪換提醒（每 90 天）
+- 瀏覽器指紋變更警告
+
+**效能**
+- Subtitle Cache：避免重複辨識相同片段
+- 音訊 Buffer 記憶體優化
+
+**使用者體驗**
+- 預算通知系統（達 80% / 100% 彈出通知）
+- 離線模式：快取最近使用的字幕
+- 多語言 UI（目前僅繁體中文）

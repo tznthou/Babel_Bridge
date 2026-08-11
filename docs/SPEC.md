@@ -1,7 +1,23 @@
 # 📘 SPEC (系統規格文件)
 # Babel Bridge - 技術規格與實作標準
 
-> 本文件為 **規格導向 (SPP) + 測試驅動 (TDD)** 標準模板,定義系統架構、API 規格、資料模型與開發規範。這是開發團隊與 AI 輔助編碼的「唯一真相來源」。
+> ## ⚠️ 這是 Phase 0 的設計稿，不是現行架構
+>
+> 本文件寫於 2025-11 專案啟動時。之後 Phase 1 與 Phase 2 大幅改動了架構，本文件未同步更新，**不可當作實作依據**。
+>
+> 已核實的落差（2026-08-11 比對原始碼）：
+>
+> | 章節 | 落差 |
+> |------|------|
+> | § 二 架構圖 | 仍畫著 `Audio Encoder Worker → MP3`，該路徑已於 Phase 1 移除 |
+> | § 3.3 / § 3.4 | 規範的 `src/workers/audio-encoder.worker.js` 不存在 |
+> | § 4.1 通訊協定 | 6 個訊息類型中 `STATUS_REQUEST` / `STATUS_RESPONSE` 不存在；缺 7 個實際使用的類型 |
+> | § 5.2 錯誤碼表 | 15 個錯誤碼中 11 個不存在於 `errors.js`；實際 26 個錯誤碼有 22 個未記錄 |
+> | 全文 | 完全未提及 Deepgram 引擎、Offscreen Document、MediaRecorder、AudioWorklet、Base64 傳輸 |
+>
+> **現行架構、通訊協定與錯誤碼請看 [DEVELOPMENT.md](DEVELOPMENT.md)，或直接讀 `src/lib/config.js` 與 `src/lib/errors.js`。**
+>
+> 本文件保留下來的價值是追溯「當初為何這樣設計」，與 [archive/](archive/) 性質相同。
 
 ---
 

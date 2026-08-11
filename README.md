@@ -226,13 +226,14 @@ Deepgram 的串流才是即時場景的正解。但 Whisper 的準確度和 `Ove
 
 | 文件 | 內容 |
 |------|------|
-| [docs/PRD.md](docs/PRD.md) | 產品需求與使用者故事 |
-| [docs/SPEC.md](docs/SPEC.md) | 系統規格、訊息協定、錯誤碼表 |
-| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 開發環境與工作流程 |
-| [docs/MILESTONES.md](docs/MILESTONES.md) | 各階段實作細節與測試數據 |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | **現行架構**、設計決策、除錯指南 |
+| [docs/MILESTONES.md](docs/MILESTONES.md) | 各階段實作細節、測試數據、已知問題 |
+| [CHANGELOG.md](CHANGELOG.md) | 變更記錄 |
 | [docs/testing/](docs/testing/) | 測試指南 |
-| [docs/archive/](docs/archive/) | 開發記錄封存（保留當時原貌） |
 | [CLAUDE.md](CLAUDE.md) | AI 協作開發指引 |
+| [docs/SPEC.md](docs/SPEC.md) | ⚠️ 早期系統規格稿，架構已於 Phase 1/2 變更，僅供追溯設計意圖 |
+| [docs/PRD.md](docs/PRD.md) | ⚠️ 早期產品需求稿，未涵蓋雙引擎架構 |
+| [docs/archive/](docs/archive/) | 開發記錄封存（保留當時原貌） |
 
 ## 貢獻
 

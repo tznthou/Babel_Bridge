@@ -226,13 +226,14 @@ Fixing one bug upgraded a batch of others from harmless to expensive. That kind 
 
 | Document | Contents |
 |----------|----------|
-| [docs/PRD.md](docs/PRD.md) | Product requirements and user stories |
-| [docs/SPEC.md](docs/SPEC.md) | System spec, message protocol, error codes |
-| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Dev environment and workflow |
-| [docs/MILESTONES.md](docs/MILESTONES.md) | Per-phase implementation notes and test data |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | **Current architecture**, design decisions, debugging guide |
+| [docs/MILESTONES.md](docs/MILESTONES.md) | Per-phase implementation notes, test data, known issues |
+| [CHANGELOG.md](CHANGELOG.md) | Change log |
 | [docs/testing/](docs/testing/) | Testing guides |
-| [docs/archive/](docs/archive/) | Development records, preserved as written |
 | [CLAUDE.md](CLAUDE.md) | AI pair-programming guide |
+| [docs/SPEC.md](docs/SPEC.md) | ⚠️ Early system spec. Architecture changed in Phase 1/2 — kept for design rationale only |
+| [docs/PRD.md](docs/PRD.md) | ⚠️ Early product requirements. Does not cover the dual-engine architecture |
+| [docs/archive/](docs/archive/) | Development records, preserved as written |
 
 ## Contributing
 
