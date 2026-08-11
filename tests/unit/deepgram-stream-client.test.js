@@ -73,11 +73,11 @@ describe('DeepgramStreamClient', () => {
 
   beforeEach(() => {
     // Mock WebSocket
-    originalWebSocket = global.WebSocket;
-    global.WebSocket = MockWebSocket;
+    originalWebSocket = globalThis.WebSocket;
+    globalThis.WebSocket = MockWebSocket;
 
     // Mock chrome.storage.local
-    global.chrome = {
+    globalThis.chrome = {
       storage: {
         local: {
           get: vi.fn().mockResolvedValue({
@@ -104,7 +104,7 @@ describe('DeepgramStreamClient', () => {
     // 結束時仍停在 fake timer 狀態，外溢到下一個測試的 client.init()，
     // 讓它等不到 MockWebSocket 的 onopen 而真的卡到 vitest timeout。
     vi.useRealTimers();
-    global.WebSocket = originalWebSocket;
+    globalThis.WebSocket = originalWebSocket;
     if (client) {
       await client.close();
     }

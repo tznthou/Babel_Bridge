@@ -155,6 +155,8 @@ describe('SubtitleService 連線生命週期', () => {
       const duplicate = await service.enable(2);
 
       expect(duplicate.success).toBe(false);
+      // Popup 靠這個欄位分辨「還在跑」與「真的失敗」，少了它會顯示成紅字錯誤
+      expect(duplicate.inProgress).toBe(true);
       // 第二次請求不該另外建連線，否則前一次的 client 會變成沒人管的孤兒
       expect(spawned.clients.length).toBe(1);
 

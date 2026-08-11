@@ -444,6 +444,13 @@ async function enableSubtitles() {
       statusText.className = 'status success';
       enableBtn.disabled = true;
       disableBtn.disabled = false;
+    } else if (response.inProgress) {
+      // 前一次啟用還在跑（多半是 Popup 關掉重開後又按了一次）。這不是失敗，
+      // 顯示紅色 ✗ 會誤導；按鈕留著可按，讓使用者稍後重試。
+      // 註：Popup 目前不會主動同步 Background 狀態，所以只能等使用者再按一次。
+      statusText.textContent = `⏳ ${response.error}`;
+      statusText.className = 'status';
+      enableBtn.disabled = false;
     } else {
       // 友善的錯誤提示
       throw new Error(response.error || '啟用失敗');

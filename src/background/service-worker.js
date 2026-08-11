@@ -115,7 +115,9 @@ export class SubtitleService {
     // 後者剛建好的資源——最後留下 isActive 為 true 卻沒有任何連線的靜默失效。
     if (this.isEnabling) {
       console.warn('[SubtitleService] 啟用流程進行中，忽略重複請求');
-      return { success: false, error: '啟用流程進行中，請稍候' };
+      // inProgress 讓 Popup 分得出「還在跑」與「真的失敗」——前者不該顯示成紅字，
+      // 因為前一次啟用多半馬上就會成功。用欄位而非比對錯誤字串，改文案不會弄壞判斷。
+      return { success: false, inProgress: true, error: '啟用流程進行中，請稍候' };
     }
     this.isEnabling = true;
 
