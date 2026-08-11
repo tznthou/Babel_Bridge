@@ -493,6 +493,38 @@ describe('DeepgramStreamClient', () => {
       // 不應再嘗試重連
       expect(client.reconnectAttempts).toBe(5);
     });
+
+    it('close() 之後即使關閉握手不乾淨也不重連', async () => {
+      await client.init();
+      const originalSocket = client.websocket;
+      vi.useFakeTimers();
+
+      await client.close();
+
+      // close() 已把 client.websocket 設為 null，但 onclose 仍掛在原 socket 上。
+      // 模擬伺服器沒回 close frame（網路先斷）：wasClean 為 false。
+      // 少了 shouldReconnect 閂，這裡會重連出一條沒有任何參照能關掉的孤兒連線，
+      // 帶著 KeepAlive 持續消耗 Deepgram 配額。
+      originalSocket.onclose({ code: 1006, reason: 'Abnormal closure', wasClean: false });
+
+      // 推進超過 RECONNECT_DELAY(1000ms)，確認連 connect() 都沒被觸發
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(client.reconnectAttempts).toBe(0);
+      expect(client.websocket).toBeNull();
+      expect(client.keepAliveTimer).toBeNull();
+    });
+
+    it('close() 後重新 init() 應恢復重連能力', async () => {
+      await client.init();
+      await client.close();
+      expect(client.shouldReconnect).toBe(false);
+
+      // 閂只在 init() 開啟。若在 connect() 開啟，競態中的重連會自行解除
+      // close() 剛閂上的鎖，等於這道防護沒有作用。
+      await client.init();
+      expect(client.shouldReconnect).toBe(true);
+    });
   });
 
   describe('getStats', () => {
