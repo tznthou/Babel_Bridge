@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DeepgramStreamClient } from '../../src/background/deepgram-stream-client.js';
-import { BabelBridgeError, ErrorCodes } from '../../src/lib/errors.js';
+import { BabelBridgeError } from '../../src/lib/errors.js';
 
 // Mock WebSocket
 class MockWebSocket {
@@ -73,11 +73,11 @@ describe('DeepgramStreamClient', () => {
 
   beforeEach(() => {
     // Mock WebSocket
-    originalWebSocket = global.WebSocket;
-    global.WebSocket = MockWebSocket;
+    originalWebSocket = globalThis.WebSocket;
+    globalThis.WebSocket = MockWebSocket;
 
     // Mock chrome.storage.local
-    global.chrome = {
+    globalThis.chrome = {
       storage: {
         local: {
           get: vi.fn().mockResolvedValue({
@@ -90,7 +90,7 @@ describe('DeepgramStreamClient', () => {
     // Mock CryptoUtils
     vi.mock('../../src/lib/crypto-utils.js', () => ({
       CryptoUtils: {
-        decrypt: vi.fn((ciphertext) =>
+        decrypt: vi.fn(() =>
           Promise.resolve('test_deepgram_key_12345678901234567890')
         ),
       },
@@ -99,12 +99,15 @@ describe('DeepgramStreamClient', () => {
     client = new DeepgramStreamClient();
   });
 
-  afterEach(() => {
-    global.WebSocket = originalWebSocket;
+  afterEach(async () => {
+    // 先還原真實 timer。close() 本身是同步的、不會卡；真正的風險是某個 it
+    // 結束時仍停在 fake timer 狀態，外溢到下一個測試的 client.init()，
+    // 讓它等不到 MockWebSocket 的 onopen 而真的卡到 vitest timeout。
+    vi.useRealTimers();
+    globalThis.WebSocket = originalWebSocket;
     if (client) {
-      client.close();
+      await client.close();
     }
-    vi.clearAllTimers();
   });
 
   describe('建構函數', () => {
@@ -323,7 +326,8 @@ describe('DeepgramStreamClient', () => {
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('音訊資料為空')
       );
-      expect(client.websocket.sentMessages.length).toBe(1); // 只有認證訊息
+      // 認證改走 WebSocket subprotocols，且不送 configure 訊息，故連線後應為空
+      expect(client.websocket.sentMessages.length).toBe(0);
     });
 
     it('應該累積發送的音訊位元組數', () => {
@@ -335,46 +339,54 @@ describe('DeepgramStreamClient', () => {
     });
   });
 
+  // 影片暫停時無音訊，Deepgram 會在 10 秒後以 NET-0001 斷線，
+  // 因此連線期間需持續送 KeepAlive text frame 維持連線。
   describe('KeepAlive 機制', () => {
     beforeEach(async () => {
+      // 這組與其他 describe 相反，必須「全程」在 fake timer 下完成連線：
+      // KeepAlive 的 setInterval 建立於 connect() 之中，若先以真實 timer 連線再切換，
+      // 該 interval 會留在真實時鐘上，advanceTimersByTime 永遠推不到它。
       vi.useFakeTimers();
-      await client.init();
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
+      const initPromise = client.init();
+      // 推進 MockWebSocket 模擬 onopen 的 10ms 與 waitForConnection 輪詢的 100ms
+      await vi.advanceTimersByTimeAsync(200);
+      await initPromise;
     });
 
     it('應該定期發送 KeepAlive 訊息', async () => {
-      // 初始狀態：只有認證訊息
+      // 連線建立後尚未觸發任何傳送（認證走 subprotocols，不佔訊息）
+      expect(client.websocket.sentMessages.length).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(5000);
+
       expect(client.websocket.sentMessages.length).toBe(1);
+      expect(JSON.parse(client.websocket.sentMessages[0])).toEqual({
+        type: 'KeepAlive',
+      });
 
-      // 前進 5 秒
       await vi.advanceTimersByTimeAsync(5000);
-
-      // 應該發送了 KeepAlive
       expect(client.websocket.sentMessages.length).toBe(2);
-      expect(
-        JSON.parse(client.websocket.sentMessages[1])
-      ).toEqual({ type: 'KeepAlive' });
+    });
 
-      // 再前進 5 秒
+    it('應該以 text frame 傳送而非 binary', async () => {
       await vi.advanceTimersByTimeAsync(5000);
 
-      // 應該再發送一次
-      expect(client.websocket.sentMessages.length).toBe(3);
+      // 送成 binary 會被 Deepgram 錯誤解讀，必須是字串
+      expect(typeof client.websocket.sentMessages[0]).toBe('string');
     });
 
     it('應該在關閉時停止 KeepAlive', async () => {
       await vi.advanceTimersByTimeAsync(5000);
-      expect(client.websocket.sentMessages.length).toBe(2);
+
+      // close() 會將 client.websocket 設為 null，先留住參考才能驗證後續無新訊息
+      const ws = client.websocket;
+      expect(ws.sentMessages.length).toBe(1);
 
       await client.close();
-      await vi.advanceTimersByTimeAsync(100);
+      await vi.advanceTimersByTimeAsync(15000);
 
-      // 關閉後不應再發送
-      await vi.advanceTimersByTimeAsync(10000);
-      expect(client.websocket.sentMessages.length).toBe(2);
+      expect(client.keepAliveTimer).toBeNull();
+      expect(ws.sentMessages.length).toBe(1);
     });
   });
 
@@ -392,12 +404,9 @@ describe('DeepgramStreamClient', () => {
 
   describe('關閉連線', () => {
     beforeEach(async () => {
-      vi.useFakeTimers();
+      // 同上：先連線再切 fake timer
       await client.init();
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
+      vi.useFakeTimers();
     });
 
     it('應該正確關閉連線並清理資源', async () => {
@@ -437,36 +446,42 @@ describe('DeepgramStreamClient', () => {
   });
 
   describe('重連機制', () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
     it('應該在非正常關閉時嘗試重連', async () => {
+      // 先連線再切 fake timer，否則 init() 等不到 MockWebSocket 的 onopen
       await client.init();
+      const originalSocket = client.websocket;
+      vi.useFakeTimers();
 
       // 模擬非正常關閉
       client.websocket.close(1006, 'Abnormal closure');
       await vi.advanceTimersByTimeAsync(100);
 
       expect(client.reconnectAttempts).toBe(1);
-    }, 10000);
+
+      // 只驗計數器不夠：scheduleReconnect() 把 reconnectAttempts++ 放在 setTimeout 之外
+      // 同步執行，真正的 connect() 要等 RECONNECT_DELAY(1000ms) 才觸發。
+      // 若只推進 100ms，即使 connect() 整段被刪除本測試仍會通過。
+      await vi.advanceTimersByTimeAsync(1200);
+
+      // 確認真的重新連上：換了新的 socket 實例、狀態回到 connected
+      expect(client.websocket).not.toBe(originalSocket);
+      expect(client.getState()).toBe('connected');
+    });
 
     it('應該在正常關閉時不重連', async () => {
       await client.init();
+      vi.useFakeTimers();
 
       // 正常關閉
       client.websocket.close(1000, 'Normal closure');
       await vi.advanceTimersByTimeAsync(100);
 
       expect(client.reconnectAttempts).toBe(0);
-    }, 10000);
+    });
 
     it('應該在超過最大重連次數後停止', async () => {
       await client.init();
+      vi.useFakeTimers();
 
       // 強制設定重連次數
       client.reconnectAttempts = 5;
@@ -477,7 +492,39 @@ describe('DeepgramStreamClient', () => {
 
       // 不應再嘗試重連
       expect(client.reconnectAttempts).toBe(5);
-    }, 10000);
+    });
+
+    it('close() 之後即使關閉握手不乾淨也不重連', async () => {
+      await client.init();
+      const originalSocket = client.websocket;
+      vi.useFakeTimers();
+
+      await client.close();
+
+      // close() 已把 client.websocket 設為 null，但 onclose 仍掛在原 socket 上。
+      // 模擬伺服器沒回 close frame（網路先斷）：wasClean 為 false。
+      // 少了 shouldReconnect 閂，這裡會重連出一條沒有任何參照能關掉的孤兒連線，
+      // 帶著 KeepAlive 持續消耗 Deepgram 配額。
+      originalSocket.onclose({ code: 1006, reason: 'Abnormal closure', wasClean: false });
+
+      // 推進超過 RECONNECT_DELAY(1000ms)，確認連 connect() 都沒被觸發
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(client.reconnectAttempts).toBe(0);
+      expect(client.websocket).toBeNull();
+      expect(client.keepAliveTimer).toBeNull();
+    });
+
+    it('close() 後重新 init() 應恢復重連能力', async () => {
+      await client.init();
+      await client.close();
+      expect(client.shouldReconnect).toBe(false);
+
+      // 閂只在 init() 開啟。若在 connect() 開啟，競態中的重連會自行解除
+      // close() 剛閂上的鎖，等於這道防護沒有作用。
+      await client.init();
+      expect(client.shouldReconnect).toBe(true);
+    });
   });
 
   describe('getStats', () => {

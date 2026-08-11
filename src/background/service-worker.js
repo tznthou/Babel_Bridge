@@ -21,21 +21,51 @@ import { MessageTypes, STORAGE_KEYS } from '../lib/config.js';
 /**
  * 全域狀態管理（Deepgram Streaming）
  */
-class SubtitleService {
+export class SubtitleService {
   constructor() {
     this.audioCapture = null;
     this.deepgramClient = null;
 
     this.isActive = false;
+    this.isEnabling = false;
     this.currentTabId = null;
+
+    // 世代編號：enable() 開頭認領一個號碼，disable() 進來就 +1。
+    // enable() 每經過一個 await 都重新確認自己還是當前世代，過期就自行收攤。
+    // 用世代而非互斥鎖，是為了讓停用立即生效——上鎖的話，enable() 卡在
+    // waitForConnection() 的 10 秒逾時期間，使用者按停用得乾等。
+    this.generation = 0;
 
     console.log('[SubtitleService] Service Worker 已啟動（Deepgram Streaming）');
   }
 
   /**
-   * 初始化服務
+   * 收掉上一輪殘留、沒人關的 Deepgram client
+   *
+   * 直接覆蓋參照會讓舊實例連同它的 KeepAlive timer 永遠留著。
+   * 先摘參照再關閉：close() 是非同步的，中途讓出時參照必須已經不在。
+   *
+   * @private
    */
-  async init() {
+  async closeStaleClient() {
+    if (!this.deepgramClient) return;
+
+    console.warn('[SubtitleService] 偵測到未關閉的 Deepgram client，先行關閉');
+    const stale = this.deepgramClient;
+    this.deepgramClient = null;
+
+    await stale.close().catch((error) => {
+      console.error('[SubtitleService] 關閉舊 Deepgram 連線失敗:', error);
+    });
+  }
+
+  /**
+   * 建立並連線一個 Deepgram client（不掛到 this，由呼叫端決定時機）
+   *
+   * @private
+   * @returns {Promise<DeepgramStreamClient>} 已連線且設好回調的 client
+   */
+  async createClient() {
     // 讀取用戶的 Deepgram 設定
     const settings = await chrome.storage.local.get([
       STORAGE_KEYS.DEEPGRAM_MODEL,
@@ -47,27 +77,27 @@ class SubtitleService {
 
     console.log('[SubtitleService] 載入用戶設定:', { model, language });
 
-    // 初始化 Deepgram Stream Client（傳入用戶設定）
-    this.deepgramClient = new DeepgramStreamClient();
-    await this.deepgramClient.init({ model, language });
+    const client = new DeepgramStreamClient();
+    await client.init({ model, language });
 
     // 設定即時字幕回調
-    this.deepgramClient.onTranscript = (transcript) => {
+    client.onTranscript = (transcript) => {
       this.handleTranscript(transcript);
     };
 
     // 設定錯誤回調
-    this.deepgramClient.onError = (error) => {
+    client.onError = (error) => {
       console.error('[SubtitleService] Deepgram 錯誤:', error);
       ErrorHandler.handle(error, { operation: 'deepgram_streaming' });
     };
 
     // 設定狀態變更回調
-    this.deepgramClient.onStateChange = (newState, oldState) => {
+    client.onStateChange = (newState, oldState) => {
       console.log(`[SubtitleService] Deepgram 狀態: ${oldState} → ${newState}`);
     };
 
-    console.log('[SubtitleService] 服務初始化完成');
+    console.log('[SubtitleService] Deepgram client 已就緒');
+    return client;
   }
 
   /**
@@ -79,43 +109,87 @@ class SubtitleService {
       return { success: true };
     }
 
-    try {
-      // 每次啟用時重新初始化，確保使用最新的用戶設定
-      await this.init();
+    // isActive 要等整個流程跑完才會設為 true，中間隔了數個 await。
+    // 若此時第二次 enable() 進來，它會把前一次正在連線的 client 當成殘留關掉，
+    // 使前者的 waitForConnection() 逾時拋錯，catch 內的 cleanup() 又反手清掉
+    // 後者剛建好的資源——最後留下 isActive 為 true 卻沒有任何連線的靜默失效。
+    if (this.isEnabling) {
+      console.warn('[SubtitleService] 啟用流程進行中，忽略重複請求');
+      // inProgress 讓 Popup 分得出「還在跑」與「真的失敗」——前者不該顯示成紅字，
+      // 因為前一次啟用多半馬上就會成功。用欄位而非比對錯誤字串，改文案不會弄壞判斷。
+      return { success: false, inProgress: true, error: '啟用流程進行中，請稍候' };
+    }
+    this.isEnabling = true;
 
-      this.currentTabId = tabId;
+    // 認領這一輪。isEnabling 只擋得住重複的 enable()，擋不住中途插進來的
+    // disable()——那會造成「Popup 顯示已啟用，管線其實已被停用清掉」的靜默失效。
+    const generation = ++this.generation;
+    const isStale = () => this.generation !== generation;
+
+    // 這一輪建立的資源先由區域變數持有。中止時只收自己建的那份，
+    // 不會誤清下一輪 enable() 已經放上去的新資源。
+    let client = null;
+    let capture = null;
+
+    const abort = async (reason) => {
+      // 為了不漏接開頭的 PCM frame，client 會在流程中途就掛上 this，
+      // 中止時必須一併摘掉，否則會留下指向已關閉連線的參照。
+      if (this.deepgramClient === client) this.deepgramClient = null;
+      if (this.audioCapture === capture) this.audioCapture = null;
+      if (this.currentTabId === tabId) this.currentTabId = null;
+
+      await Promise.allSettled([client?.close(), capture?.stop()]);
+
+      console.warn(`[SubtitleService] 啟用流程中止：${reason}`);
+      return { success: false, error: reason };
+    };
+
+    try {
+      // 每次啟用時重新建立連線，確保使用最新的用戶設定
+      await this.closeStaleClient();
+      client = await this.createClient();
+      if (isStale()) return await abort('啟用流程已被停用中止');
 
       // 通知 Content Script 啟用字幕（檢查頁面是否有 video）
       const response = await chrome.tabs.sendMessage(tabId, {
         type: 'ENABLE_SUBTITLES'
       });
+      if (isStale()) return await abort('啟用流程已被停用中止');
 
       // 如果 Content Script 回報沒有 video，立即回傳錯誤
       if (!response.success) {
         console.warn('[SubtitleService] Content Script 回報:', response.error);
-        return {
-          success: false,
-          error: response.error || '無法啟用字幕'
-        };
+        // client 此時已建立連線並啟動 KeepAlive，不清掉會留下一條沒人管的連線：
+        // isActive 尚未設為 true，disable() 也帶不走它，只能持續消耗 Deepgram 配額
+        return await abort(response.error || '無法啟用字幕');
       }
 
-      // 啟動音訊擷取 (Offscreen Document 會自動處理 PCM 轉換)
-      this.audioCapture = new AudioCapture();
-      await this.audioCapture.start(tabId);
+      // 音訊一啟動，PCM frame 就會回送到 handlePCMFrame()，而它讀的是
+      // this.deepgramClient——必須在 capture 之前掛上，否則開頭數個 frame 會被丟棄
+      this.deepgramClient = client;
+      this.currentTabId = tabId;
 
+      // 啟動音訊擷取 (Offscreen Document 會自動處理 PCM 轉換)
+      capture = new AudioCapture();
+      await capture.start(tabId);
+      if (isStale()) return await abort('啟用流程已被停用中止');
+
+      this.audioCapture = capture;
       this.isActive = true;
 
       console.log(`[SubtitleService] 已啟用 Deepgram Streaming (Tab ${tabId})`);
       return { success: true };
     } catch (error) {
       await ErrorHandler.handle(error, { operation: 'enable_service', tabId });
-      this.cleanup();
+      await abort(error.message || '啟用字幕失敗');
 
       // 將錯誤訊息傳遞回 Popup
       return {
         success: false,
         error: error.message || '啟用字幕失敗'
       };
+    } finally {
+      this.isEnabling = false;
     }
   }
 
@@ -123,7 +197,15 @@ class SubtitleService {
    * 停用字幕功能（Deepgram Streaming）
    */
   async disable() {
-    if (!this.isActive) {
+    // 先作廢進行中的 enable()：它每個 await 之後都會重新確認世代，發現過期
+    // 就自行收掉手上的資源，不會在停用之後才把管線掛回來。必須放在下面的
+    // early return 之前——那時 enable() 可能還沒把任何資源掛上 this。
+    this.generation++;
+
+    // 不能只看 isActive：enable() 若在建立連線之後、isActive 設為 true 之前失敗，
+    // 會留下一個已連線的 deepgramClient。只認 isActive 會讓那條連線帶著 KeepAlive
+    // 永遠關不掉，因此只要還有殘留資源就得走完清理流程。
+    if (!this.isActive && !this.deepgramClient && !this.audioCapture) {
       return { success: true };  // 已停用，仍返回成功
     }
 
@@ -265,6 +347,8 @@ class SubtitleService {
       this.deepgramClient.close().catch((error) => {
         console.error('[SubtitleService] 關閉 Deepgram 連線時發生錯誤:', error);
       });
+      // 必須清掉參照，否則 disable() 的殘留資源判斷會永遠成立
+      this.deepgramClient = null;
     }
 
     this.currentTabId = null;

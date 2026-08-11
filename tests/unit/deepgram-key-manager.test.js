@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DeepgramKeyManager } from '../../src/lib/deepgram-key-manager.js';
-import { BabelBridgeError, ErrorCodes } from '../../src/lib/errors.js';
+import { BabelBridgeError } from '../../src/lib/errors.js';
 
 describe('DeepgramKeyManager', () => {
   beforeEach(() => {
@@ -52,7 +52,8 @@ describe('DeepgramKeyManager', () => {
     });
 
     it('應該拒絕包含非法字元的 Key', () => {
-      const invalidKey = 'a1b2c3d4e5f6g7h8i9j0!@#$%^&*()';
+      // 合法字元部分需滿 32 字元，否則會先撞到長度檢查而測不到格式檢查
+      const invalidKey = 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6!@#$%^&*()';
       expect(() => DeepgramKeyManager.validateFormat(invalidKey)).toThrow(
         BabelBridgeError
       );
