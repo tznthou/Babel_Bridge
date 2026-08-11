@@ -76,9 +76,9 @@ export class DeepgramStreamClient {
 
   /**
    * 初始化並建立 WebSocket 連線
-   * @param {Object} config - 可選配置
-   * @param {string} config.model - 模型 ID ('nova-2' 或 'nova-3')
-   * @param {string} config.language - 語言代碼 ('multi', 'en', 'zh-TW' 等)
+   * @param {Object} [config] - 可選配置；未帶的欄位沿用建構子預設值
+   * @param {string} [config.model] - 模型 ID ('nova-2' 或 'nova-3')
+   * @param {string} [config.language] - 語言代碼 ('multi', 'en', 'zh-TW' 等)
    * @returns {Promise<void>}
    */
   async init(config = {}) {
@@ -218,10 +218,12 @@ export class DeepgramStreamClient {
 
   /**
    * 等待連線成功
+   * @returns {Promise<void>}
    * @private
    */
   waitForConnection() {
-    return new Promise((resolve, reject) => {
+    /** @type {Promise<void>} */
+    const connected = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('WebSocket 連線超時（10 秒）'));
       }, 10000);
@@ -240,6 +242,8 @@ export class DeepgramStreamClient {
 
       checkState();
     });
+
+    return connected;
   }
 
   /**

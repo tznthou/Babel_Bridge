@@ -6,12 +6,18 @@ import { DeepgramKeyManager } from '../lib/deepgram-key-manager.js';
 import { MessageTypes, STORAGE_KEYS, RECOGNITION_MODES } from '../lib/config.js';
 
 // DOM 元素 - Tab 切換
-const tabs = document.querySelectorAll('.tab');
+// getElementById / querySelectorAll 只保證回傳 HTMLElement / Element，
+// 用到 .value / .disabled / .dataset 的元素要標出實際型別，否則型別檢查看不到這些屬性。
+const tabs = /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.tab'));
 const tabPanels = document.querySelectorAll('.tab-panel');
 
 // DOM 元素 - OpenAI
-const openaiApiKeyInput = document.getElementById('openai-api-key-input');
-const verifyOpenaiBtn = document.getElementById('verify-openai-btn');
+const openaiApiKeyInput = /** @type {HTMLInputElement} */ (
+  document.getElementById('openai-api-key-input')
+);
+const verifyOpenaiBtn = /** @type {HTMLButtonElement} */ (
+  document.getElementById('verify-openai-btn')
+);
 const openaiApiKeyStatus = document.getElementById('openai-api-key-status');
 const openaiKeyInfo = document.getElementById('openai-key-info');
 const openaiKeyMasked = document.getElementById('openai-key-masked');
@@ -19,8 +25,12 @@ const openaiKeyVerified = document.getElementById('openai-key-verified');
 const removeOpenaiKeyBtn = document.getElementById('remove-openai-key');
 
 // DOM 元素 - Deepgram
-const deepgramApiKeyInput = document.getElementById('deepgram-api-key-input');
-const verifyDeepgramBtn = document.getElementById('verify-deepgram-btn');
+const deepgramApiKeyInput = /** @type {HTMLInputElement} */ (
+  document.getElementById('deepgram-api-key-input')
+);
+const verifyDeepgramBtn = /** @type {HTMLButtonElement} */ (
+  document.getElementById('verify-deepgram-btn')
+);
 const deepgramApiKeyStatus = document.getElementById('deepgram-api-key-status');
 const deepgramKeyInfo = document.getElementById('deepgram-key-info');
 const deepgramKeyMasked = document.getElementById('deepgram-key-masked');
@@ -30,12 +40,16 @@ const deepgramScopes = document.getElementById('deepgram-scopes');
 const removeDeepgramKeyBtn = document.getElementById('remove-deepgram-key');
 
 // DOM 元素 - Deepgram 辨識模式設定（場景導向）
-const recognitionModeSelect = document.getElementById('recognition-mode');
+const recognitionModeSelect = /** @type {HTMLSelectElement} */ (
+  document.getElementById('recognition-mode')
+);
 const recognitionHint = document.getElementById('recognition-hint');
 
 // DOM 元素 - 字幕控制
-const enableBtn = document.getElementById('enable-btn');
-const disableBtn = document.getElementById('disable-btn');
+const enableBtn = /** @type {HTMLButtonElement} */ (document.getElementById('enable-btn'));
+const disableBtn = /** @type {HTMLButtonElement} */ (
+  document.getElementById('disable-btn')
+);
 const statusText = document.getElementById('status-text');
 
 // DOM 元素 - 成本統計
@@ -339,7 +353,9 @@ async function loadRecognitionSettings() {
     ]);
 
     // 優先使用新的 recognition mode
-    let modeId = result[STORAGE_KEYS.DEEPGRAM_RECOGNITION_MODE];
+    let modeId = /** @type {string|undefined} */ (
+      result[STORAGE_KEYS.DEEPGRAM_RECOGNITION_MODE]
+    );
 
     // 向後相容：如果沒有 mode，從舊的 model+language 推斷
     if (!modeId) {

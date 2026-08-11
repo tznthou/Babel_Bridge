@@ -76,7 +76,7 @@ export class APIKeyManager {
   /**
    * 驗證 API Key 有效性 (呼叫 OpenAI API 測試)
    * @param {string} apiKey - 要驗證的 API Key
-   * @returns {Promise<{valid: boolean, keyType: string}>} 驗證結果與密鑰類型
+   * @returns {Promise<{valid: boolean, keyType: string, modelsCount: number}>} 驗證結果、密鑰類型與可用模型數
    * @throws {BabelBridgeError} 驗證失敗時拋出錯誤
    */
   static async verifyKey(apiKey) {
@@ -233,7 +233,9 @@ export class APIKeyManager {
   static async getKey() {
     try {
       const result = await chrome.storage.local.get(STORAGE_KEYS.API_KEY_ENCRYPTED);
-      const encryptedKey = result[STORAGE_KEYS.API_KEY_ENCRYPTED];
+      const encryptedKey = /** @type {string|undefined} */ (
+        result[STORAGE_KEYS.API_KEY_ENCRYPTED]
+      );
 
       if (!encryptedKey) {
         console.log('[APIKeyManager] 未找到已儲存的 API Key');
@@ -432,11 +434,12 @@ export class APIKeyManager {
 
   /**
    * 取得使用者設定
+   * @returns {Promise<{monthlyBudget: number, enableBudgetWarning: boolean}>}
    * @private
    */
   static async getUserSettings() {
     const result = await chrome.storage.local.get(STORAGE_KEYS.USER_SETTINGS);
-    return (
+    return /** @type {{monthlyBudget: number, enableBudgetWarning: boolean}} */ (
       result[STORAGE_KEYS.USER_SETTINGS] || {
         monthlyBudget: 10,
         enableBudgetWarning: true,

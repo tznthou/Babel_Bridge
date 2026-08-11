@@ -72,8 +72,10 @@ export class SubtitleService {
       STORAGE_KEYS.DEEPGRAM_LANGUAGE,
     ]);
 
-    const model = settings[STORAGE_KEYS.DEEPGRAM_MODEL] || 'nova-2';
-    const language = settings[STORAGE_KEYS.DEEPGRAM_LANGUAGE] || 'zh-TW';
+    const model = /** @type {string} */ (settings[STORAGE_KEYS.DEEPGRAM_MODEL] || 'nova-2');
+    const language = /** @type {string} */ (
+      settings[STORAGE_KEYS.DEEPGRAM_LANGUAGE] || 'zh-TW'
+    );
 
     console.log('[SubtitleService] 載入用戶設定:', { model, language });
 
@@ -232,7 +234,9 @@ export class SubtitleService {
 
   /**
    * 處理 PCM frame（來自 Offscreen Document）並發送到 Deepgram
-   * @private
+   *
+   * 不是 private：這是 DEEPGRAM_PCM_FRAME 訊息的進入點，
+   * 由模組底部的 onMessage handler 從外部呼叫。
    */
   handlePCMFrame(frameData) {
     if (!this.deepgramClient) {

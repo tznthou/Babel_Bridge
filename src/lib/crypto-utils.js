@@ -94,7 +94,9 @@ export class CryptoUtils {
       const derivedKey = await crypto.subtle.deriveKey(
         {
           name: 'PBKDF2',
-          salt: keySalt,
+          // TS 5.7 起 ArrayBufferView 帶 buffer 泛型，Uint8Array<ArrayBufferLike>
+          // 不被 BufferSource 接受；執行期型別正確，只是標準定義收得比較窄
+          salt: /** @type {BufferSource} */ (keySalt),
           iterations: this.PBKDF2_ITERATIONS,
           hash: 'SHA-256',
         },

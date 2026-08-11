@@ -1,5 +1,10 @@
+/// <reference types="audioworklet" />
 /**
  * PCM AudioWorklet Processor - Deepgram 即時音訊處理
+ *
+ * 這個檔案跑在 AudioWorkletGlobalScope，不是 window 也不是 Service Worker，
+ * 全域物件（AudioWorkletProcessor / sampleRate / registerProcessor）由上面
+ * 的 reference 提供，標準 DOM lib 沒有收錄。
  *
  * 功能：
  * 1. 接收 48kHz stereo 音訊（瀏覽器預設）

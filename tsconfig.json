@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    // 只做型別檢查，不產出任何檔案——build 一律走 vite
+    "noEmit": true,
+
+    // Chrome 109+（offscreen API 最低需求）完整支援 ES2022
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+
+    // 檢查 .js 檔的 JSDoc 型別，不改任何副檔名
+    "allowJs": true,
+    "checkJs": true,
+
+    // 初期寬鬆，噴的錯清乾淨後再逐步加嚴
+    "strict": false,
+    "noImplicitAny": false,
+
+    "types": ["chrome"],
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": false
+  },
+  "include": ["src/**/*.js", "types/**/*.d.ts"],
+  "exclude": ["node_modules", "dist", "tests", "scripts"]
+}

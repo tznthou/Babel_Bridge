@@ -213,7 +213,9 @@ export class DeepgramKeyManager {
       STORAGE_KEYS.DEEPGRAM_API_KEY_ENCRYPTED
     );
 
-    const encryptedKey = result[STORAGE_KEYS.DEEPGRAM_API_KEY_ENCRYPTED];
+    const encryptedKey = /** @type {string|undefined} */ (
+      result[STORAGE_KEYS.DEEPGRAM_API_KEY_ENCRYPTED]
+    );
 
     if (!encryptedKey) {
       throw new BabelBridgeError(
