@@ -52,12 +52,14 @@ const { MockDeepgramStreamClient, MockAudioCapture, spawned } = vi.hoisted(() =>
     constructor() {
       this.stopped = false;
       this.settleStart = null;
+      this.failStart = null;
       spawned.captures.push(this);
     }
 
     start() {
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         this.settleStart = resolve;
+        this.failStart = reject;
       });
     }
 
@@ -178,6 +180,12 @@ describe('SubtitleService 連線生命週期', () => {
 
   describe('enable() 被 disable() 打斷', () => {
     it('連線建立中被打斷：不留下已啟用假象，半路的連線要收掉', async () => {
+      const messagesSent = [];
+      chrome.tabs.sendMessage = async (_tabId, message) => {
+        messagesSent.push(message.type);
+        return { success: true };
+      };
+
       const enabling = service.enable(1);
       await settleMicrotasks();
       expect(spawned.clients.length).toBe(1);
@@ -196,6 +204,11 @@ describe('SubtitleService 連線生命週期', () => {
       expect(spawned.clients[0].closed).toBe(true);
       // 停用之後不該再往下建音訊擷取
       expect(spawned.captures.length).toBe(0);
+      // 也不該再去叫 Content Script 開字幕——停用訊息已經送過了，
+      // 這時補一則 ENABLE_SUBTITLES 會在頁面留下沒人關的字幕 overlay
+      expect(messagesSent).not.toContain('ENABLE_SUBTITLES');
+
+      chrome.tabs.sendMessage = async () => ({ success: true });
     });
 
     it('音訊啟動中被打斷：不留下運作中的擷取', async () => {
@@ -233,6 +246,25 @@ describe('SubtitleService 連線生命週期', () => {
       expect(service.deepgramClient).toBe(spawned.clients[1]);
       expect(service.currentTabId).toBe(2);
       expect(spawned.clients[1].closed).toBe(false);
+    });
+  });
+
+  describe('啟用過程中拋錯', () => {
+    it('音訊擷取啟動失敗時要收乾淨，不留下半掛的連線', async () => {
+      const { enabling } = await advanceToCapture(service);
+
+      // client 此時已掛上 this（為了不漏接 PCM frame），而這條路徑上沒有
+      // disable() 會來 cleanup，abort() 自己摘掉參照是唯一的清理機會
+      expect(service.deepgramClient).toBe(spawned.clients[0]);
+
+      spawned.captures[0].failStart(new Error('tabCapture 權限被拒'));
+      const result = await enabling;
+
+      expect(result.success).toBe(false);
+      expect(service.isActive).toBe(false);
+      expect(service.deepgramClient).toBeNull();
+      expect(service.currentTabId).toBeNull();
+      expect(spawned.clients[0].closed).toBe(true);
     });
   });
 
