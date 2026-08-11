@@ -16,18 +16,21 @@
 
 #### Added
 - 補上突變測試揭露的兩條未覆蓋路徑 (`42a8d81`)
+- `npm run typecheck`：以 `checkJs` 檢查現有 JSDoc 的型別基線，不改副檔名、不動 build，刪掉 `tsconfig.json` 即可退回。同時新增 `types/globals.d.ts`，補上 V8 的 `Error.captureStackTrace`、tabCapture 的 `mandatory` legacy constraint、Service Worker 的 `WorkerGlobalScope` 三處全域宣告 (`08ba368`)
 
 #### Changed
 - 整理專案資料夾結構為 `docs/` 與 `scripts/debug/`，收斂 `.gitignore` (`c31b8e4`)
 - 重寫 README 為中英雙語版，開發里程碑抽出為獨立文件 (`14846b2`)
 - 修正文件交叉引用並補上封存說明 (`4fc5447`)
 - integration 測試改為缺 API Key 時跳過，而非直接失敗 (`a533409`)
+- `@types/chrome` 0.0.258 → 0.2.5，修好 `getMediaStreamId` 被定義成 callback-only 的誤報；`chrome.storage` 回傳值同時從 `any` 收緊為 `unknown`，讀值處補上型別標註 (`08ba368`)
 
 #### Fixed
 - 修復 Deepgram 測試套件 9 個失敗案例與 71 秒耗時 (`c738781`)
 - 接上 Deepgram KeepAlive 並移除 `configure` 死 code——KeepAlive 是官方機制，靜音超過 10 秒會斷線 (`16ced2e`)
 - 以世代編號與重連閂修復兩條連線生命週期併發問題 (`591b2e8`)
 - 併發防護觸發時不再讓 Popup 誤報成啟用失敗 (`b2f8c53`)
+- 三處 JSDoc 與實作矛盾（皆為文件錯誤，實作正確）：`APIKeyManager.verifyKey` 的 `@returns` 漏了 `modelsCount` 且與同檔 `verifyAndSave` 的宣告互相矛盾、`handlePCMFrame` 誤標 `@private` 但實為訊息進入點、`DeepgramStreamClient.init(config)` 的選填參數標成必填 (`08ba368`)
 
 #### Removed
 - `.mcp.json` 移出版控並加入 `.gitignore` (`b9ee95f`)

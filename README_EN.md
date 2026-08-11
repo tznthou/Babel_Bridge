@@ -179,6 +179,7 @@ npm test                 # unit + integration (integration skips itself without 
 npm run test:unit
 npm run test:integration # requires the DEEPGRAM_API_KEY environment variable
 npm run lint
+npm run typecheck        # JSDoc type checking (checkJs — not a TypeScript migration)
 npm run package          # builds the store-ready .zip
 ```
 

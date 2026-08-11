@@ -179,6 +179,7 @@ npm test                 # 單元 + 整合測試（缺 API Key 時整合測試�
 npm run test:unit        # 只跑單元測試
 npm run test:integration # 需要 DEEPGRAM_API_KEY 環境變數
 npm run lint
+npm run typecheck        # JSDoc 型別檢查（checkJs，非 TypeScript 遷移）
 npm run package          # 產生上架用 .zip
 ```
 

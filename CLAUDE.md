@@ -17,6 +17,7 @@ npm run test:unit         # 單元測試
 npm run test:integration  # 整合測試（需 Deepgram Key，未設則跳過）
 npm run test:coverage     # 覆蓋率
 npm run lint              # ESLint
+npm run typecheck         # JSDoc 型別檢查（checkJs），基線為零錯誤
 npm run format            # Prettier
 ```
 

@@ -202,6 +202,18 @@ Chrome 自 2023 年起強制新 Extension 使用 V3。連帶限制：Service Wor
 
 原訂 GPT-4o-mini（比 GPT-4o 便宜約 10 倍，翻譯字幕這種任務足夠）。但即時字幕的競品其實是專用翻譯 API——LLM 有 TTFT 加逐 token 生成的固有延遲。DeepL 等選項待評估。
 
+### 為何用 checkJs 而非全量 TypeScript
+
+2026-08-11 評估過遷移，結論是**買不到我們真正需要的東西**。把當時 22 個 `fix` commit 攤開分類，型別檢查攔得下的只有 2 個（`VideoMonitor.video` getter 缺失、`WhisperClient` 取金鑰的方式），約 10%，而且都是五分鐘修完的等級。真正花時間的那些——ScriptProcessorNode 死鎖、連線生命週期併發、WebM header 缺失導致 Whisper 95% 失敗、Deepgram SchemaError——全部是 runtime 行為問題，型別系統一個都擋不住。上面「設計決策」整章與 CLAUDE.md 的紅線清單也是同一個訊號：這個專案的失敗模式在行為層，不在型別層。
+
+效能也不是理由。TypeScript 是純編譯期的，型別在產出的 JS 裡完全抹除，V8 看到的位元組碼幾乎相同；設定失當（`target` 過低、用 `enum`、開 decorator metadata）反而會因為 downlevel 產生較慢的程式碼。而本專案的瓶頸從頭到尾是網路——Deepgram WebSocket round-trip 與 Whisper HTTP 呼叫，JS 執行速度不在關鍵路徑上。
+
+所以選 `checkJs`：檢查現有 JSDoc，不改副檔名、不動 build pipeline，刪掉 `tsconfig.json` 就能完全退回。首次啟用清掉 43 個錯誤，其中抓出 3 處 JSDoc 與實作矛盾（詳見 CHANGELOG）。
+
+三個踩過的坑：`types/globals.d.ts` 要補 V8 的 `Error.captureStackTrace`、tabCapture 的 `mandatory` legacy constraint、Service Worker 的 `WorkerGlobalScope`——都是「runtime 真的有、只是標準定義沒收」，補宣告時要註明來源，不要拿它當消警告的萬用出口。`pcm-processor.js` 跑在 AudioWorkletGlobalScope，用檔頂 `/// <reference types="audioworklet" />` 隔離，不要塞進 `tsconfig` 的 `types` 陣列（會與 DOM 定義衝突）。`typecheck` 必須是獨立 script，不能串進 `lint`——ESLint 有 4 個既有 error 永遠 exit 1，串起來 `tsc` 會永遠跑不到。
+
+重新評估的時機：Phase 3 的 UI 上框架且狀態變複雜、有第二位開發者加入、或跨 context 訊息類型再長一個量級。
+
 ---
 
 ## 常用開發任務
@@ -214,6 +226,7 @@ npm run test:e2e          # Playwright（目前 tests/e2e/ 為空）
 npm run test:coverage     # 覆蓋率報告
 
 npm run lint              # ESLint
+npm run typecheck         # tsc --noEmit，檢查 JSDoc 型別（checkJs）
 npm run format            # Prettier
 
 npm run build             # 生產版本
@@ -221,6 +234,8 @@ npm run package           # 產生 Chrome Web Store 上架 .zip
 ```
 
 `test:integration` 會帶 `REQUIRE_DEEPGRAM_KEY=1`。沒設金鑰時測試跳過而非失敗，CI 才不會因為缺金鑰紅掉。
+
+`typecheck` 的基線是零錯誤，新冒出來的都是真訊號，不要用 `@ts-nocheck` 消音。它刻意不併進 `lint`：ESLint 目前有 4 個既有 error（`content-script` 的 `no-case-declarations`、`error-handler` 的 `no-useless-escape`、`crypto-utils` 的 `WorkerGlobalScope`、`pcm-processor` 的 `sampleRate`）會讓 `lint` 永遠 exit 1，串起來 `tsc` 就再也跑不到。後兩個與 `types/globals.d.ts` 解掉的是同一個根因，只是 ESLint 的 globals 設定沒跟上，尚未處理。
 
 ---
 
