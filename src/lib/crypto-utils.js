@@ -30,9 +30,13 @@ export class CryptoUtils {
     // TODO: 未來可以考慮使用 chrome.storage.local 儲存裝置 ID
 
     // 偵測當前環境（用於 debug）
-    const isServiceWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
-    const context = isServiceWorker ? 'ServiceWorker' :
-                    (typeof window !== 'undefined' ? 'Window' : 'Unknown');
+    const isServiceWorker =
+      typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
+    const context = isServiceWorker
+      ? 'ServiceWorker'
+      : typeof window !== 'undefined'
+        ? 'Window'
+        : 'Unknown';
 
     // 收集瀏覽器特徵（跨環境一致）
     const features = [
@@ -114,11 +118,9 @@ export class CryptoUtils {
         salt: keySalt,
       };
     } catch (error) {
-      throw new BabelBridgeError(
-        ErrorCodes.CRYPTO_ERROR,
-        `金鑰衍生失敗: ${error.message}`,
-        { originalError: error }
-      );
+      throw new BabelBridgeError(ErrorCodes.CRYPTO_ERROR, `金鑰衍生失敗: ${error.message}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -161,11 +163,9 @@ export class CryptoUtils {
       return this.arrayBufferToBase64(combined);
     } catch (error) {
       console.error('[CryptoUtils] 加密失敗:', error);
-      throw new BabelBridgeError(
-        ErrorCodes.CRYPTO_ERROR,
-        `資料加密失敗: ${error.message}`,
-        { originalError: error }
-      );
+      throw new BabelBridgeError(ErrorCodes.CRYPTO_ERROR, `資料加密失敗: ${error.message}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -206,18 +206,14 @@ export class CryptoUtils {
 
       // 解密失敗通常是因為金鑰不正確
       if (error.name === 'OperationError') {
-        throw new BabelBridgeError(
-          ErrorCodes.CRYPTO_ERROR,
-          '解密失敗：金鑰不正確或資料已損壞',
-          { originalError: error }
-        );
+        throw new BabelBridgeError(ErrorCodes.CRYPTO_ERROR, '解密失敗：金鑰不正確或資料已損壞', {
+          originalError: error,
+        });
       }
 
-      throw new BabelBridgeError(
-        ErrorCodes.CRYPTO_ERROR,
-        `資料解密失敗: ${error.message}`,
-        { originalError: error }
-      );
+      throw new BabelBridgeError(ErrorCodes.CRYPTO_ERROR, `資料解密失敗: ${error.message}`, {
+        originalError: error,
+      });
     }
   }
 

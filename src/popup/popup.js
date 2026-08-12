@@ -47,9 +47,7 @@ const recognitionHint = document.getElementById('recognition-hint');
 
 // DOM 元素 - 字幕控制
 const enableBtn = /** @type {HTMLButtonElement} */ (document.getElementById('enable-btn'));
-const disableBtn = /** @type {HTMLButtonElement} */ (
-  document.getElementById('disable-btn')
-);
+const disableBtn = /** @type {HTMLButtonElement} */ (document.getElementById('disable-btn'));
 const statusText = document.getElementById('status-text');
 
 // DOM 元素 - 成本統計
@@ -141,15 +139,8 @@ async function loadOpenaiKeyInfo() {
   } catch (error) {
     console.error('[Popup] 載入 OpenAI Key 失敗:', error);
 
-    if (
-      error.code === 'CRYPTO_DECRYPTION_FAILED' ||
-      error.code === 'API_KEY_MISSING'
-    ) {
-      showStatus(
-        openaiApiKeyStatus,
-        '⚠️ API Key 解密失敗，請重新設定',
-        'error'
-      );
+    if (error.code === 'CRYPTO_DECRYPTION_FAILED' || error.code === 'API_KEY_MISSING') {
+      showStatus(openaiApiKeyStatus, '⚠️ API Key 解密失敗，請重新設定', 'error');
       openaiKeyInfo.classList.add('hidden');
       openaiApiKeyInput.parentElement.style.display = 'flex';
     }
@@ -193,11 +184,7 @@ async function loadDeepgramKeyInfo() {
       error.code === 'DEEPGRAM_API_KEY_DECRYPT_FAILED' ||
       error.code === 'DEEPGRAM_API_KEY_NOT_FOUND'
     ) {
-      showStatus(
-        deepgramApiKeyStatus,
-        '⚠️ API Key 解密失敗，請重新設定',
-        'error'
-      );
+      showStatus(deepgramApiKeyStatus, '⚠️ API Key 解密失敗，請重新設定', 'error');
       deepgramKeyInfo.classList.add('hidden');
       deepgramApiKeyInput.parentElement.style.display = 'flex';
     }
@@ -263,11 +250,7 @@ async function verifyDeepgramKey() {
   try {
     const result = await DeepgramKeyManager.verifyAndSave(apiKey);
 
-    showStatus(
-      deepgramApiKeyStatus,
-      `✓ 驗證成功！Project: ${result.projectUuid}`,
-      'success'
-    );
+    showStatus(deepgramApiKeyStatus, `✓ 驗證成功！Project: ${result.projectUuid}`, 'success');
 
     // 重新載入 Key 資訊
     await loadDeepgramKeyInfo();
@@ -332,7 +315,7 @@ async function removeDeepgramKey() {
 function renderRecognitionModes() {
   recognitionModeSelect.innerHTML = '';
 
-  RECOGNITION_MODES.forEach(mode => {
+  RECOGNITION_MODES.forEach((mode) => {
     const option = document.createElement('option');
     option.value = mode.id;
     option.textContent = mode.name;
@@ -353,9 +336,7 @@ async function loadRecognitionSettings() {
     ]);
 
     // 優先使用新的 recognition mode
-    let modeId = /** @type {string|undefined} */ (
-      result[STORAGE_KEYS.DEEPGRAM_RECOGNITION_MODE]
-    );
+    let modeId = /** @type {string|undefined} */ (result[STORAGE_KEYS.DEEPGRAM_RECOGNITION_MODE]);
 
     // 向後相容：如果沒有 mode，從舊的 model+language 推斷
     if (!modeId) {
@@ -365,7 +346,7 @@ async function loadRecognitionSettings() {
       if (oldModel && oldLanguage) {
         // 嘗試找到匹配的 mode
         const matchedMode = RECOGNITION_MODES.find(
-          m => m.model === oldModel && m.language === oldLanguage
+          (m) => m.model === oldModel && m.language === oldLanguage
         );
         modeId = matchedMode?.id;
       }
@@ -390,7 +371,7 @@ async function loadRecognitionSettings() {
 async function saveRecognitionSettings() {
   try {
     const modeId = recognitionModeSelect.value;
-    const mode = RECOGNITION_MODES.find(m => m.id === modeId);
+    const mode = RECOGNITION_MODES.find((m) => m.id === modeId);
 
     if (!mode) {
       console.error('[Popup] 找不到辨識模式:', modeId);
@@ -418,7 +399,7 @@ async function saveRecognitionSettings() {
  * @param {string} modeId - 辨識模式 ID
  */
 function updateRecognitionHint(modeId) {
-  const mode = RECOGNITION_MODES.find(m => m.id === modeId);
+  const mode = RECOGNITION_MODES.find((m) => m.id === modeId);
   if (!mode) return;
 
   const costPerHour = (mode.cost * 60).toFixed(2);

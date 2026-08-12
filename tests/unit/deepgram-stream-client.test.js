@@ -90,9 +90,7 @@ describe('DeepgramStreamClient', () => {
     // Mock CryptoUtils
     vi.mock('../../src/lib/crypto-utils.js', () => ({
       CryptoUtils: {
-        decrypt: vi.fn(() =>
-          Promise.resolve('test_deepgram_key_12345678901234567890')
-        ),
+        decrypt: vi.fn(() => Promise.resolve('test_deepgram_key_12345678901234567890')),
       },
     }));
 
@@ -285,9 +283,7 @@ describe('DeepgramStreamClient', () => {
         type: 'UtteranceEnd',
       });
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('句子結束')
-      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('句子結束'));
     });
 
     it('應該記錄 SpeechStarted 訊息', () => {
@@ -297,9 +293,7 @@ describe('DeepgramStreamClient', () => {
         type: 'SpeechStarted',
       });
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('偵測到語音')
-      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('偵測到語音'));
     });
   });
 
@@ -323,9 +317,7 @@ describe('DeepgramStreamClient', () => {
 
       client.sendAudio(emptyData);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('音訊資料為空')
-      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('音訊資料為空'));
       // 認證改走 WebSocket subprotocols，且不送 configure 訊息，故連線後應為空
       expect(client.websocket.sentMessages.length).toBe(0);
     });

@@ -31,9 +31,9 @@ export class LanguageRules {
    */
   static shouldMerge(seg1, seg2, language = 'auto', mergeTimeGap = 0.3) {
     // 基本檢查：時間間隔是否過大
-    const timeGap = seg2.start - seg1.end
+    const timeGap = seg2.start - seg1.end;
     if (timeGap > mergeTimeGap) {
-      return false
+      return false;
     }
 
     // 根據語言選擇對應規則
@@ -42,31 +42,31 @@ export class LanguageRules {
       case 'zh-tw':
       case 'zh-cn':
       case 'zh-hk':
-        return this._shouldMergeChinese(seg1, seg2)
+        return this._shouldMergeChinese(seg1, seg2);
 
       case 'en':
       case 'en-us':
       case 'en-gb':
-        return this._shouldMergeEnglish(seg1, seg2)
+        return this._shouldMergeEnglish(seg1, seg2);
 
       case 'ja':
       case 'jp':
-        return this._shouldMergeJapanese(seg1, seg2)
+        return this._shouldMergeJapanese(seg1, seg2);
 
       case 'ko':
       case 'kr':
-        return this._shouldMergeKorean(seg1, seg2)
+        return this._shouldMergeKorean(seg1, seg2);
 
       case 'es':
       case 'fr':
       case 'de':
       case 'it':
       case 'pt':
-        return this._shouldMergeEuropean(seg1, seg2)
+        return this._shouldMergeEuropean(seg1, seg2);
 
       case 'auto':
       default:
-        return this._shouldMergeAuto(seg1, seg2)
+        return this._shouldMergeAuto(seg1, seg2);
     }
   }
 
@@ -84,29 +84,29 @@ export class LanguageRules {
    * @returns {boolean} 是否應該合併
    */
   static _shouldMergeChinese(seg1, seg2) {
-    const text1 = seg1.text.trim()
-    const text2 = seg2.text.trim()
+    const text1 = seg1.text.trim();
+    const text2 = seg2.text.trim();
 
     // 檢查前一句是否以句末標點結束
-    const endsWithCompletePunctuation = /[。！？；：]$/.test(text1)
+    const endsWithCompletePunctuation = /[。！？；：]$/.test(text1);
     if (endsWithCompletePunctuation) {
-      return false  // 完整句子，不合併
+      return false; // 完整句子，不合併
     }
 
     // 檢查前一句是否以句中標點結束（支援半形和全形逗號）
-    const endsWithIncompletePunctuation = /[,，、]$/.test(text1)
+    const endsWithIncompletePunctuation = /[,，、]$/.test(text1);
     if (endsWithIncompletePunctuation) {
-      return true  // 句中標點，應該合併
+      return true; // 句中標點，應該合併
     }
 
     // 檢查是否在引號中
-    const inQuotes = /[「『]$/.test(text1) || /^[」』]/.test(text2)
+    const inQuotes = /[「『]$/.test(text1) || /^[」』]/.test(text2);
     if (inQuotes) {
-      return true  // 引號內容，合併
+      return true; // 引號內容，合併
     }
 
     // 預設不合併
-    return false
+    return false;
   }
 
   /**
@@ -124,44 +124,46 @@ export class LanguageRules {
    * @returns {boolean} 是否應該合併
    */
   static _shouldMergeEnglish(seg1, seg2) {
-    const text1 = seg1.text.trim()
-    const text2 = seg2.text.trim()
+    const text1 = seg1.text.trim();
+    const text2 = seg2.text.trim();
 
     // 檢查前一句是否以句末標點結束
-    const endsWithPeriod = /\.$/.test(text1)
+    const endsWithPeriod = /\.$/.test(text1);
     if (endsWithPeriod) {
       // 檢查是否為常見縮寫
-      const commonAbbreviations = /\b(Mr|Mrs|Ms|Dr|Prof|Sr|Jr|etc|e\.g|i\.e|vs|Ph\.D)\.$/.test(text1)
+      const commonAbbreviations = /\b(Mr|Mrs|Ms|Dr|Prof|Sr|Jr|etc|e\.g|i\.e|vs|Ph\.D)\.$/.test(
+        text1
+      );
       if (commonAbbreviations) {
-        return true  // 縮寫，應該合併
+        return true; // 縮寫，應該合併
       }
-      return false  // 真正的句末，不合併
+      return false; // 真正的句末，不合併
     }
 
-    const endsWithCompletePunctuation = /[!?;:]$/.test(text1)
+    const endsWithCompletePunctuation = /[!?;:]$/.test(text1);
     if (endsWithCompletePunctuation) {
-      return false  // 完整句子，不合併
+      return false; // 完整句子，不合併
     }
 
     // 檢查前一句是否以逗號結束
-    const endsWithComma = /,$/.test(text1)
+    const endsWithComma = /,$/.test(text1);
     if (endsWithComma) {
       // 檢查下一句是否以大寫開頭（可能是新句）
-      const startsWithCapital = /^[A-Z]/.test(text2)
+      const startsWithCapital = /^[A-Z]/.test(text2);
       if (startsWithCapital) {
         // 可能是新句，但也可能是專有名詞，採保守策略：合併
-        return true
+        return true;
       }
-      return true  // 逗號，應該合併
+      return true; // 逗號，應該合併
     }
 
     // 檢查是否在引號中
-    const inQuotes = /"$/.test(text1) || /^"/.test(text2)
+    const inQuotes = /"$/.test(text1) || /^"/.test(text2);
     if (inQuotes) {
-      return true
+      return true;
     }
 
-    return false
+    return false;
   }
 
   /**
@@ -178,28 +180,28 @@ export class LanguageRules {
    * @returns {boolean} 是否應該合併
    */
   static _shouldMergeJapanese(seg1, seg2) {
-    const text1 = seg1.text.trim()
-    const text2 = seg2.text.trim()
+    const text1 = seg1.text.trim();
+    const text2 = seg2.text.trim();
 
     // 檢查前一句是否以句末標點結束
-    const endsWithCompletePunctuation = /[。！？]$/.test(text1)
+    const endsWithCompletePunctuation = /[。！？]$/.test(text1);
     if (endsWithCompletePunctuation) {
-      return false
+      return false;
     }
 
     // 檢查前一句是否以句中標點結束
-    const endsWithIncompletePunctuation = /[、]$/.test(text1)
+    const endsWithIncompletePunctuation = /[、]$/.test(text1);
     if (endsWithIncompletePunctuation) {
-      return true
+      return true;
     }
 
     // 檢查是否在引號中
-    const inQuotes = /[「『]$/.test(text1) || /^[」』]/.test(text2)
+    const inQuotes = /[「『]$/.test(text1) || /^[」』]/.test(text2);
     if (inQuotes) {
-      return true
+      return true;
     }
 
-    return false
+    return false;
   }
 
   /**
@@ -215,22 +217,22 @@ export class LanguageRules {
    * @returns {boolean} 是否應該合併
    */
   static _shouldMergeKorean(seg1, seg2) {
-    const text1 = seg1.text.trim()
-    const text2 = seg2.text.trim()
+    const text1 = seg1.text.trim();
+    const text2 = seg2.text.trim();
 
     // 檢查前一句是否以句末標點結束
-    const endsWithCompletePunctuation = /[.!?。！？]$/.test(text1)
+    const endsWithCompletePunctuation = /[.!?。！？]$/.test(text1);
     if (endsWithCompletePunctuation) {
-      return false
+      return false;
     }
 
     // 檢查前一句是否以逗號結束
-    const endsWithComma = /[,，]$/.test(text1)
+    const endsWithComma = /[,，]$/.test(text1);
     if (endsWithComma) {
-      return true
+      return true;
     }
 
-    return false
+    return false;
   }
 
   /**
@@ -247,27 +249,27 @@ export class LanguageRules {
    * @returns {boolean} 是否應該合併
    */
   static _shouldMergeEuropean(seg1, seg2) {
-    const text1 = seg1.text.trim()
-    const text2 = seg2.text.trim()
+    const text1 = seg1.text.trim();
+    const text2 = seg2.text.trim();
 
     // 檢查前一句是否以句末標點結束
-    const endsWithCompletePunctuation = /[.!?;:]$/.test(text1)
+    const endsWithCompletePunctuation = /[.!?;:]$/.test(text1);
     if (endsWithCompletePunctuation) {
-      return false
+      return false;
     }
 
     // 檢查前一句是否以逗號結束
-    const endsWithComma = /,$/.test(text1)
+    const endsWithComma = /,$/.test(text1);
     if (endsWithComma) {
       // 檢查下一句是否以大寫開頭
-      const startsWithCapital = /^[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞ]/.test(text2)
+      const startsWithCapital = /^[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞ]/.test(text2);
       if (startsWithCapital) {
-        return true  // 保守策略：合併
+        return true; // 保守策略：合併
       }
-      return true
+      return true;
     }
 
-    return false
+    return false;
   }
 
   /**
@@ -284,30 +286,30 @@ export class LanguageRules {
    * @returns {boolean} 是否應該合併
    */
   static _shouldMergeAuto(seg1, seg2) {
-    const text1 = seg1.text.trim()
-    const text2 = seg2.text.trim()
-    const combinedText = text1 + text2
+    const text1 = seg1.text.trim();
+    const text2 = seg2.text.trim();
+    const combinedText = text1 + text2;
 
     // 檢測中文字元（包含繁簡體）
-    const hasChinese = /[\u4e00-\u9fff]/.test(combinedText)
+    const hasChinese = /[\u4e00-\u9fff]/.test(combinedText);
     if (hasChinese) {
-      return this._shouldMergeChinese(seg1, seg2)
+      return this._shouldMergeChinese(seg1, seg2);
     }
 
     // 檢測日文字元（平假名、片假名）
-    const hasJapanese = /[\u3040-\u309f\u30a0-\u30ff]/.test(combinedText)
+    const hasJapanese = /[\u3040-\u309f\u30a0-\u30ff]/.test(combinedText);
     if (hasJapanese) {
-      return this._shouldMergeJapanese(seg1, seg2)
+      return this._shouldMergeJapanese(seg1, seg2);
     }
 
     // 檢測韓文字元（諺文）
-    const hasKorean = /[\uac00-\ud7af]/.test(combinedText)
+    const hasKorean = /[\uac00-\ud7af]/.test(combinedText);
     if (hasKorean) {
-      return this._shouldMergeKorean(seg1, seg2)
+      return this._shouldMergeKorean(seg1, seg2);
     }
 
     // 預設使用英文規則（適用於拉丁字母語言）
-    return this._shouldMergeEnglish(seg1, seg2)
+    return this._shouldMergeEnglish(seg1, seg2);
   }
 
   /**
@@ -324,20 +326,20 @@ export class LanguageRules {
    */
   static detectLanguage(text) {
     // 計算各種字元的出現次數
-    const chineseChars = (text.match(/[\u4e00-\u9fff]/g) || []).length
-    const japaneseChars = (text.match(/[\u3040-\u309f\u30a0-\u30ff]/g) || []).length
-    const koreanChars = (text.match(/[\uac00-\ud7af]/g) || []).length
-    const latinChars = (text.match(/[a-zA-Z]/g) || []).length
+    const chineseChars = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+    const japaneseChars = (text.match(/[\u3040-\u309f\u30a0-\u30ff]/g) || []).length;
+    const koreanChars = (text.match(/[\uac00-\ud7af]/g) || []).length;
+    const latinChars = (text.match(/[a-zA-Z]/g) || []).length;
 
-    const total = text.length
+    const total = text.length;
 
     // 判斷主要語言（字元佔比 > 30%）
-    if (chineseChars / total > 0.3) return 'zh'
-    if (japaneseChars / total > 0.3) return 'ja'
-    if (koreanChars / total > 0.3) return 'ko'
-    if (latinChars / total > 0.3) return 'en'
+    if (chineseChars / total > 0.3) return 'zh';
+    if (japaneseChars / total > 0.3) return 'ja';
+    if (koreanChars / total > 0.3) return 'ko';
+    if (latinChars / total > 0.3) return 'en';
 
-    return 'auto'
+    return 'auto';
   }
 }
 
@@ -348,4 +350,4 @@ export class LanguageRules {
  * @property {string} text - 文字內容
  */
 
-export default LanguageRules
+export default LanguageRules;

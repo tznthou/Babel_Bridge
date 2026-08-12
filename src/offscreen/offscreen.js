@@ -154,18 +154,20 @@ function handlePCMFrame(frameData, tabId) {
     // 需要轉換為 Array，在 Service Worker 端重建
     const pcmArray = Array.from(new Int16Array(data));
 
-    chrome.runtime.sendMessage({
-      type: 'DEEPGRAM_PCM_FRAME',
-      data: {
-        pcmArray, // Int16 陣列（會在 Service Worker 重建為 ArrayBuffer）
-        frameIndex,
-        sampleCount,
-        sampleRate,
-        tabId,
-      },
-    }).catch((error) => {
-      console.error('[Offscreen Deepgram] ❌ 轉發 PCM frame 失敗:', error);
-    });
+    chrome.runtime
+      .sendMessage({
+        type: 'DEEPGRAM_PCM_FRAME',
+        data: {
+          pcmArray, // Int16 陣列（會在 Service Worker 重建為 ArrayBuffer）
+          frameIndex,
+          sampleCount,
+          sampleRate,
+          tabId,
+        },
+      })
+      .catch((error) => {
+        console.error('[Offscreen Deepgram] ❌ 轉發 PCM frame 失敗:', error);
+      });
   } else if (type === 'STATS') {
     // 統計資訊
     console.log('[Offscreen Deepgram] 📊 統計:', frameData.stats);

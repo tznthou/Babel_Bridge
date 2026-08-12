@@ -6,9 +6,7 @@ export default defineConfig({
     webExtension({
       manifest: './manifest.json',
       watchFilePaths: ['src/**/*', 'icons/**/*'],
-      additionalInputs: [
-        'src/offscreen/offscreen.html'
-      ],
+      additionalInputs: ['src/offscreen/offscreen.html'],
     }),
   ],
   // ✅ 關鍵修復：使用相對路徑而非絕對路徑

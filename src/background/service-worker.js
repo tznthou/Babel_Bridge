@@ -73,9 +73,7 @@ export class SubtitleService {
     ]);
 
     const model = /** @type {string} */ (settings[STORAGE_KEYS.DEEPGRAM_MODEL] || 'nova-2');
-    const language = /** @type {string} */ (
-      settings[STORAGE_KEYS.DEEPGRAM_LANGUAGE] || 'zh-TW'
-    );
+    const language = /** @type {string} */ (settings[STORAGE_KEYS.DEEPGRAM_LANGUAGE] || 'zh-TW');
 
     console.log('[SubtitleService] 載入用戶設定:', { model, language });
 
@@ -154,7 +152,7 @@ export class SubtitleService {
 
       // 通知 Content Script 啟用字幕（檢查頁面是否有 video）
       const response = await chrome.tabs.sendMessage(tabId, {
-        type: 'ENABLE_SUBTITLES'
+        type: 'ENABLE_SUBTITLES',
       });
       if (isStale()) return await abort('啟用流程已被停用中止');
 
@@ -188,7 +186,7 @@ export class SubtitleService {
       // 將錯誤訊息傳遞回 Popup
       return {
         success: false,
-        error: error.message || '啟用字幕失敗'
+        error: error.message || '啟用字幕失敗',
       };
     } finally {
       this.isEnabling = false;
@@ -208,7 +206,7 @@ export class SubtitleService {
     // 會留下一個已連線的 deepgramClient。只認 isActive 會讓那條連線帶著 KeepAlive
     // 永遠關不掉，因此只要還有殘留資源就得走完清理流程。
     if (!this.isActive && !this.deepgramClient && !this.audioCapture) {
-      return { success: true };  // 已停用，仍返回成功
+      return { success: true }; // 已停用，仍返回成功
     }
 
     const tabId = this.currentTabId;
@@ -217,7 +215,7 @@ export class SubtitleService {
     if (tabId) {
       try {
         await chrome.tabs.sendMessage(tabId, {
-          type: 'DISABLE_SUBTITLES'
+          type: 'DISABLE_SUBTITLES',
         });
       } catch (error) {
         // Content Script 可能已卸載，忽略錯誤

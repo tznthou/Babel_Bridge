@@ -15,10 +15,10 @@ describe('APIKeyManager', () => {
 
     it('應該拒絕無效格式', () => {
       const invalidKeys = [
-        'invalid-key',           // 不以 sk- 開頭
-        'sk-tooshort',           // 長度不足 30 字元
-        'sk-' + 'a'.repeat(20),  // 長度不足 30 字元 (23 字元)
-        'pk-' + 'a'.repeat(48),  // 錯誤前綴
+        'invalid-key', // 不以 sk- 開頭
+        'sk-tooshort', // 長度不足 30 字元
+        'sk-' + 'a'.repeat(20), // 長度不足 30 字元 (23 字元)
+        'pk-' + 'a'.repeat(48), // 錯誤前綴
         '',
         null,
         undefined,

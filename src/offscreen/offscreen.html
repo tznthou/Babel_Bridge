@@ -1,30 +1,30 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-TW">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Babel Bridge Offscreen Document</title>
-  <!-- 🚨 錯誤診斷：立即執行的 inline script -->
-  <script>
-    console.log('🔍 [Diagnostic] offscreen.html 已載入（inline script）');
-    console.log('🔍 [Diagnostic] 當前 URL:', window.location.href);
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Babel Bridge Offscreen Document</title>
+    <!-- 🚨 錯誤診斷：立即執行的 inline script -->
+    <script>
+      console.log('🔍 [Diagnostic] offscreen.html 已載入（inline script）');
+      console.log('🔍 [Diagnostic] 當前 URL:', window.location.href);
 
-    // 監聽所有錯誤
-    window.addEventListener('error', (event) => {
-      console.error('🔍 [Diagnostic] ❌ 全域錯誤:', event.message);
-      console.error('🔍 [Diagnostic] 錯誤來源:', event.filename);
-      console.error('🔍 [Diagnostic] 錯誤行號:', event.lineno);
-      console.error('🔍 [Diagnostic] 錯誤詳情:', event.error);
-    });
+      // 監聽所有錯誤
+      window.addEventListener('error', (event) => {
+        console.error('🔍 [Diagnostic] ❌ 全域錯誤:', event.message);
+        console.error('🔍 [Diagnostic] 錯誤來源:', event.filename);
+        console.error('🔍 [Diagnostic] 錯誤行號:', event.lineno);
+        console.error('🔍 [Diagnostic] 錯誤詳情:', event.error);
+      });
 
-    // 監聽未處理的 Promise rejection
-    window.addEventListener('unhandledrejection', (event) => {
-      console.error('🔍 [Diagnostic] ❌ 未處理的 Promise rejection:', event.reason);
-    });
-  </script>
-</head>
-<body>
-  <!-- Offscreen Document 用於在背景執行 Web Worker -->
-  <script type="module" src="./offscreen.js"></script>
-</body>
+      // 監聽未處理的 Promise rejection
+      window.addEventListener('unhandledrejection', (event) => {
+        console.error('🔍 [Diagnostic] ❌ 未處理的 Promise rejection:', event.reason);
+      });
+    </script>
+  </head>
+  <body>
+    <!-- Offscreen Document 用於在背景執行 Web Worker -->
+    <script type="module" src="./offscreen.js"></script>
+  </body>
 </html>

@@ -1,0 +1,7 @@
+# 產物與相依
+node_modules/
+dist/
+coverage/
+
+# npm 自己管，格式化它只會製造巨大且無意義的 diff
+package-lock.json

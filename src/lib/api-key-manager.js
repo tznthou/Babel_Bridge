@@ -48,10 +48,7 @@ export class APIKeyManager {
 
     // 檢查是否以 sk- 開頭
     if (!trimmedKey.startsWith('sk-')) {
-      throw new BabelBridgeError(
-        ErrorCodes.API_KEY_INVALID,
-        'API Key 格式錯誤：必須以 "sk-" 開頭'
-      );
+      throw new BabelBridgeError(ErrorCodes.API_KEY_INVALID, 'API Key 格式錯誤：必須以 "sk-" 開頭');
     }
 
     // 檢查長度
@@ -233,9 +230,7 @@ export class APIKeyManager {
   static async getKey() {
     try {
       const result = await chrome.storage.local.get(STORAGE_KEYS.API_KEY_ENCRYPTED);
-      const encryptedKey = /** @type {string|undefined} */ (
-        result[STORAGE_KEYS.API_KEY_ENCRYPTED]
-      );
+      const encryptedKey = /** @type {string|undefined} */ (result[STORAGE_KEYS.API_KEY_ENCRYPTED]);
 
       if (!encryptedKey) {
         console.log('[APIKeyManager] 未找到已儲存的 API Key');

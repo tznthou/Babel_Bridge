@@ -49,7 +49,7 @@ class VideoMonitor {
 
       observer.observe(document.body, {
         childList: true,
-        subtree: true
+        subtree: true,
       });
 
       console.log('[VideoMonitor] 等待 video 元素出現...');
@@ -207,12 +207,14 @@ class SubtitleOverlay {
       chunkIndex: data.chunkIndex,
       segments: data.segments.length,
       videoStartTime: data.videoStartTime?.toFixed(2),
-      audioTime: data.audioStartTime ? `${data.audioStartTime.toFixed(2)}s - ${data.audioEndTime.toFixed(2)}s` : 'N/A',
+      audioTime: data.audioStartTime
+        ? `${data.audioStartTime.toFixed(2)}s - ${data.audioEndTime.toFixed(2)}s`
+        : 'N/A',
       currentVideoTime: currentVideoTime.toFixed(2),
     });
 
     // Service Worker 已提供正確的絕對時間，只需處理延遲到達的情況
-    const segments = data.segments.map(seg => {
+    const segments = data.segments.map((seg) => {
       // 延遲到達補償：如果 segment 已經過去，延長顯示時間
       const delaySeconds = Math.max(0, currentVideoTime - seg.end);
       const adjustedEnd = delaySeconds > 0 ? currentVideoTime + 3 : seg.end;
@@ -226,8 +228,12 @@ class SubtitleOverlay {
     });
 
     console.log('[ContentScript] 📊 Segments 時間範圍:', {
-      first: segments[0] ? `${segments[0].start.toFixed(2)}s - ${segments[0].end.toFixed(2)}s` : 'N/A',
-      last: segments[segments.length - 1] ? `${segments[segments.length - 1].start.toFixed(2)}s - ${segments[segments.length - 1].end.toFixed(2)}s` : 'N/A',
+      first: segments[0]
+        ? `${segments[0].start.toFixed(2)}s - ${segments[0].end.toFixed(2)}s`
+        : 'N/A',
+      last: segments[segments.length - 1]
+        ? `${segments[segments.length - 1].start.toFixed(2)}s - ${segments[segments.length - 1].end.toFixed(2)}s`
+        : 'N/A',
       text: segments[0]?.text || 'N/A',
       delayedArrival: segments[0]?._delayedArrival || false,
     });
@@ -307,7 +313,11 @@ class SubtitleOverlay {
     this.container.appendChild(subtitleEl);
     this.container.style.display = 'flex';
 
-    console.log('[ContentScript] 📺 顯示字幕:', segment.text, `[${segment.isFinal ? 'Final' : 'Interim'}]`);
+    console.log(
+      '[ContentScript] 📺 顯示字幕:',
+      segment.text,
+      `[${segment.isFinal ? 'Final' : 'Interim'}]`
+    );
   }
 
   /**
@@ -385,7 +395,11 @@ class SubtitleOverlay {
     // 顯示容器
     this.container.style.display = 'flex';
 
-    console.log('[ContentScript] 顯示字幕:', segment.text, `(${segment.start.toFixed(2)}s - ${segment.end.toFixed(2)}s)`);
+    console.log(
+      '[ContentScript] 顯示字幕:',
+      segment.text,
+      `(${segment.start.toFixed(2)}s - ${segment.end.toFixed(2)}s)`
+    );
   }
 
   /**
@@ -409,10 +423,7 @@ class SubtitleOverlay {
     const cutoff = Math.max(0, currentTime - SEGMENT_RETENTION_SECONDS);
     let removeCount = 0;
 
-    while (
-      removeCount < this.segments.length &&
-      this.segments[removeCount].end < cutoff
-    ) {
+    while (removeCount < this.segments.length && this.segments[removeCount].end < cutoff) {
       removeCount++;
     }
 
@@ -487,10 +498,14 @@ class SubtitleOverlay {
     // 等待 video metadata 載入完成
     if (video.readyState < 2) {
       console.log('[ContentScript] 等待 video loadedmetadata 事件...');
-      video.addEventListener('loadedmetadata', () => {
-        console.log('[ContentScript] loadedmetadata 觸發，開始定位');
-        this.initPositioning(video);
-      }, { once: true });
+      video.addEventListener(
+        'loadedmetadata',
+        () => {
+          console.log('[ContentScript] loadedmetadata 觸發，開始定位');
+          this.initPositioning(video);
+        },
+        { once: true }
+      );
 
       // 備用：5 秒超時後強制執行
       setTimeout(() => {
@@ -515,7 +530,7 @@ class SubtitleOverlay {
     this.resizeObserver.observe(video);
 
     // Fullscreen 監聽（支援不同瀏覽器前綴）
-    ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange'].forEach(event => {
+    ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange'].forEach((event) => {
       document.addEventListener(event, () => this.handleFullscreen());
     });
 
@@ -547,7 +562,7 @@ class SubtitleOverlay {
       rectHeight: rect.height,
       視窗寬度: window.innerWidth,
       視窗高度: window.innerHeight,
-      videoReadyState: video.readyState
+      videoReadyState: video.readyState,
     });
 
     // 動態計算 overlay 位置（精確對齊影片）
@@ -589,7 +604,7 @@ function enableSubtitles() {
     console.warn('[ContentScript] ⚠️ 此頁面沒有影片元素，無法啟用字幕');
     return {
       success: false,
-      error: '此頁面沒有影片，請在 YouTube、Netflix 等影片網站使用'
+      error: '此頁面沒有影片，請在 YouTube、Netflix 等影片網站使用',
     };
   }
 
