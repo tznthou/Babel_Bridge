@@ -4,10 +4,7 @@
     "es2021": true,
     "webextensions": true
   },
-  "extends": [
-    "eslint:recommended",
-    "prettier"
-  ],
+  "extends": ["eslint:recommended", "prettier"],
   "parserOptions": {
     "ecmaVersion": "latest",
     "sourceType": "module"
@@ -20,5 +17,21 @@
   },
   "globals": {
     "chrome": "readonly"
-  }
+  },
+  "overrides": [
+    {
+      "files": ["src/lib/crypto-utils.js"],
+      "globals": {
+        "WorkerGlobalScope": "readonly"
+      }
+    },
+    {
+      "files": ["src/offscreen/pcm-processor.js"],
+      "globals": {
+        "AudioWorkletProcessor": "readonly",
+        "registerProcessor": "readonly",
+        "sampleRate": "readonly"
+      }
+    }
+  ]
 }

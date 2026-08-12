@@ -13,9 +13,9 @@
  * @license MIT
  */
 
-import { calculateSimilarity, quickSimilarityCheck } from '../lib/text-similarity.js'
-import { BabelBridgeError, ErrorCodes } from '../lib/errors.js'
-import { LanguageRules } from '../lib/language-rules.js'
+import { calculateSimilarity, quickSimilarityCheck } from '../lib/text-similarity.js';
+import { BabelBridgeError, ErrorCodes } from '../lib/errors.js';
+import { LanguageRules } from '../lib/language-rules.js';
 
 /**
  * OverlapProcessor 類別
@@ -41,24 +41,24 @@ export class OverlapProcessor {
    */
   constructor(config = {}) {
     this.config = {
-      overlapDuration: config.overlapDuration || 1000,      // 1 秒重疊
+      overlapDuration: config.overlapDuration || 1000, // 1 秒重疊
       similarityThreshold: config.similarityThreshold || 0.8, // 80% 相似度
-      mergeTimeGap: config.mergeTimeGap || 0.3,             // 0.3 秒間隔
-      maxCompareLength: config.maxCompareLength || 100,     // 比對前 100 字元
+      mergeTimeGap: config.mergeTimeGap || 0.3, // 0.3 秒間隔
+      maxCompareLength: config.maxCompareLength || 100, // 比對前 100 字元
       debug: config.debug || false,
-      ...config
-    }
+      ...config,
+    };
 
     /** @type {Array<Segment>|null} 上一段的 segments */
-    this.previousSegments = null
+    this.previousSegments = null;
 
     /** @type {Array<Segment>} 已處理的所有 segments */
-    this.processedSegments = []
+    this.processedSegments = [];
 
     /** @type {number} 處理的音訊段計數 */
-    this.chunkCount = 0
+    this.chunkCount = 0;
 
-    this._log('OverlapProcessor initialized with config:', this.config)
+    this._log('OverlapProcessor initialized with config:', this.config);
   }
 
   /**
@@ -74,7 +74,7 @@ export class OverlapProcessor {
    * const newSegments = processor.process(whisperResponse, 0.0)
    */
   process(response, chunkStartTime) {
-    this.chunkCount++
+    this.chunkCount++;
 
     // 驗證輸入
     if (!response || !response.segments) {
@@ -82,26 +82,23 @@ export class OverlapProcessor {
         ErrorCodes.INVALID_INPUT,
         'Invalid Whisper response: missing segments',
         { response, chunkStartTime }
-      )
+      );
     }
 
-    this._log(`\n=== Processing Chunk #${this.chunkCount} (start: ${chunkStartTime}s) ===`)
-    this._log(`Raw segments count: ${response.segments.length}`)
+    this._log(`\n=== Processing Chunk #${this.chunkCount} (start: ${chunkStartTime}s) ===`);
+    this._log(`Raw segments count: ${response.segments.length}`);
 
     // 1. 調整 segments 的時間戳為絕對時間
-    const adjustedSegments = this._adjustTimestamps(
-      response.segments,
-      chunkStartTime
-    )
+    const adjustedSegments = this._adjustTimestamps(response.segments, chunkStartTime);
 
-    this._log(`Adjusted segments: ${adjustedSegments.length}`)
+    this._log(`Adjusted segments: ${adjustedSegments.length}`);
 
     // 2. 如果是第一段，直接返回
     if (!this.previousSegments) {
-      this._log('First chunk - returning all segments')
-      this.previousSegments = adjustedSegments
-      this.processedSegments = [...adjustedSegments]
-      return adjustedSegments
+      this._log('First chunk - returning all segments');
+      this.previousSegments = adjustedSegments;
+      this.processedSegments = [...adjustedSegments];
+      return adjustedSegments;
     }
 
     // 3. 處理重疊區
@@ -109,15 +106,15 @@ export class OverlapProcessor {
       this.previousSegments,
       adjustedSegments,
       chunkStartTime
-    )
+    );
 
-    this._log(`New segments after deduplication: ${newSegments.length}`)
+    this._log(`New segments after deduplication: ${newSegments.length}`);
 
     // 4. 更新狀態
-    this.previousSegments = adjustedSegments
-    this.processedSegments.push(...newSegments)
+    this.previousSegments = adjustedSegments;
+    this.processedSegments.push(...newSegments);
 
-    return newSegments
+    return newSegments;
   }
 
   /**
@@ -132,13 +129,13 @@ export class OverlapProcessor {
    * @returns {Array<Segment>} 調整後的 segments
    */
   _adjustTimestamps(segments, chunkStartTime) {
-    return segments.map(seg => ({
+    return segments.map((seg) => ({
       ...seg,
       start: seg.start + chunkStartTime,
       end: seg.end + chunkStartTime,
-      _originalStart: seg.start,  // 保留原始時間戳供 debug
-      _originalEnd: seg.end
-    }))
+      _originalStart: seg.start, // 保留原始時間戳供 debug
+      _originalEnd: seg.end,
+    }));
   }
 
   /**
@@ -157,46 +154,46 @@ export class OverlapProcessor {
    * @returns {Array<Segment>} 去重後的新 segments
    */
   _processOverlap(previousSegments, currentSegments, chunkStartTime) {
-    const overlapStart = chunkStartTime
-    const overlapEnd = chunkStartTime + (this.config.overlapDuration / 1000)
+    const overlapStart = chunkStartTime;
+    const overlapEnd = chunkStartTime + this.config.overlapDuration / 1000;
 
-    this._log(`Overlap region: ${overlapStart.toFixed(2)}s - ${overlapEnd.toFixed(2)}s`)
+    this._log(`Overlap region: ${overlapStart.toFixed(2)}s - ${overlapEnd.toFixed(2)}s`);
 
     // 1. 找出重疊區的 segments
-    const prevOverlap = previousSegments.filter(seg =>
-      seg.end > overlapStart && seg.start < overlapEnd
-    )
-    const currOverlap = currentSegments.filter(seg =>
-      seg.start < overlapEnd && seg.end > overlapStart
-    )
+    const prevOverlap = previousSegments.filter(
+      (seg) => seg.end > overlapStart && seg.start < overlapEnd
+    );
+    const currOverlap = currentSegments.filter(
+      (seg) => seg.start < overlapEnd && seg.end > overlapStart
+    );
 
-    this._log(`Previous overlap segments: ${prevOverlap.length}`)
-    this._log(`Current overlap segments: ${currOverlap.length}`)
+    this._log(`Previous overlap segments: ${prevOverlap.length}`);
+    this._log(`Current overlap segments: ${currOverlap.length}`);
 
     if (this.config.debug) {
-      prevOverlap.forEach(seg => {
-        this._log(`  [Prev] ${seg.start.toFixed(2)}s-${seg.end.toFixed(2)}s: "${seg.text}"`)
-      })
-      currOverlap.forEach(seg => {
-        this._log(`  [Curr] ${seg.start.toFixed(2)}s-${seg.end.toFixed(2)}s: "${seg.text}"`)
-      })
+      prevOverlap.forEach((seg) => {
+        this._log(`  [Prev] ${seg.start.toFixed(2)}s-${seg.end.toFixed(2)}s: "${seg.text}"`);
+      });
+      currOverlap.forEach((seg) => {
+        this._log(`  [Curr] ${seg.start.toFixed(2)}s-${seg.end.toFixed(2)}s: "${seg.text}"`);
+      });
     }
 
     // 2. 找出重複的 segments（在 currentSegments 中的索引）
-    const duplicateIndices = this._findDuplicates(prevOverlap, currOverlap, currentSegments)
+    const duplicateIndices = this._findDuplicates(prevOverlap, currOverlap, currentSegments);
 
-    this._log(`Duplicate segments found: ${duplicateIndices.size}`)
+    this._log(`Duplicate segments found: ${duplicateIndices.size}`);
 
     // 3. 過濾掉重複的 segments
     const newSegments = currentSegments.filter((seg, idx) => {
       // 如果在重疊區之外，直接保留
-      if (seg.start >= overlapEnd) return true
+      if (seg.start >= overlapEnd) return true;
 
       // 如果在重疊區內，檢查是否重複
-      return !duplicateIndices.has(idx)
-    })
+      return !duplicateIndices.has(idx);
+    });
 
-    return newSegments
+    return newSegments;
   }
 
   /**
@@ -214,10 +211,10 @@ export class OverlapProcessor {
    * @returns {Set<number>} 重複 segment 的索引集合（在 allCurrentSegments 中的索引）
    */
   _findDuplicates(prevOverlap, currOverlap, allCurrentSegments) {
-    const duplicates = new Set()
+    const duplicates = new Set();
 
     for (let i = 0; i < currOverlap.length; i++) {
-      const curr = currOverlap[i]
+      const curr = currOverlap[i];
 
       for (const prev of prevOverlap) {
         // 快速預檢：使用簡化的相似度檢查
@@ -225,59 +222,65 @@ export class OverlapProcessor {
           prev.text,
           curr.text,
           this.config.similarityThreshold
-        )
+        );
 
         if (!quickCheck) {
-          continue  // 快速排除明顯不相似的
+          continue; // 快速排除明顯不相似的
         }
 
         // 1. 計算時間戳重疊
-        const timeOverlap = this._calculateTimeOverlap(prev, curr)
-        const prevDuration = prev.end - prev.start
-        const currDuration = curr.end - curr.start
-        const minDuration = Math.min(prevDuration, currDuration)
+        const timeOverlap = this._calculateTimeOverlap(prev, curr);
+        const prevDuration = prev.end - prev.start;
+        const currDuration = curr.end - curr.start;
+        const minDuration = Math.min(prevDuration, currDuration);
 
         // 時間戳重疊比例
-        const timeOverlapRatio = minDuration > 0 ? timeOverlap / minDuration : 0
+        const timeOverlapRatio = minDuration > 0 ? timeOverlap / minDuration : 0;
 
         // 2. 計算文字相似度
         const textSimilarity = calculateSimilarity(prev.text, curr.text, {
           normalize: true,
-          maxLength: this.config.maxCompareLength
-        })
+          maxLength: this.config.maxCompareLength,
+        });
 
         if (this.config.debug) {
-          this._log(`\n[Comparing]`)
-          this._log(`  Previous: "${prev.text}" (${prev.start.toFixed(2)}s - ${prev.end.toFixed(2)}s)`)
-          this._log(`  Current:  "${curr.text}" (${curr.start.toFixed(2)}s - ${curr.end.toFixed(2)}s)`)
-          this._log(`  Time overlap: ${timeOverlap.toFixed(2)}s (ratio: ${(timeOverlapRatio * 100).toFixed(1)}%)`)
-          this._log(`  Text similarity: ${(textSimilarity * 100).toFixed(1)}%`)
+          this._log(`\n[Comparing]`);
+          this._log(
+            `  Previous: "${prev.text}" (${prev.start.toFixed(2)}s - ${prev.end.toFixed(2)}s)`
+          );
+          this._log(
+            `  Current:  "${curr.text}" (${curr.start.toFixed(2)}s - ${curr.end.toFixed(2)}s)`
+          );
+          this._log(
+            `  Time overlap: ${timeOverlap.toFixed(2)}s (ratio: ${(timeOverlapRatio * 100).toFixed(1)}%)`
+          );
+          this._log(`  Text similarity: ${(textSimilarity * 100).toFixed(1)}%`);
         }
 
         // 3. 判斷是否重複
         // 策略 1: 時間戳重疊 > 80% → 強制視為重複（即使文字略有差異）
         if (timeOverlapRatio > 0.8) {
-          const globalIdx = allCurrentSegments.indexOf(curr)
+          const globalIdx = allCurrentSegments.indexOf(curr);
           if (globalIdx !== -1) {
-            duplicates.add(globalIdx)
-            this._log(`  ✓ Marked as duplicate (high time overlap)`)
+            duplicates.add(globalIdx);
+            this._log(`  ✓ Marked as duplicate (high time overlap)`);
           }
-          break
+          break;
         }
 
         // 策略 2: 時間戳重疊 > 50% 且文字相似度 > 閾值
         if (timeOverlapRatio > 0.5 && textSimilarity > this.config.similarityThreshold) {
-          const globalIdx = allCurrentSegments.indexOf(curr)
+          const globalIdx = allCurrentSegments.indexOf(curr);
           if (globalIdx !== -1) {
-            duplicates.add(globalIdx)
-            this._log(`  ✓ Marked as duplicate (time + text similarity)`)
+            duplicates.add(globalIdx);
+            this._log(`  ✓ Marked as duplicate (time + text similarity)`);
           }
-          break
+          break;
         }
       }
     }
 
-    return duplicates
+    return duplicates;
   }
 
   /**
@@ -289,9 +292,9 @@ export class OverlapProcessor {
    * @returns {number} 重疊時長（秒）
    */
   _calculateTimeOverlap(seg1, seg2) {
-    const overlapStart = Math.max(seg1.start, seg2.start)
-    const overlapEnd = Math.min(seg1.end, seg2.end)
-    return Math.max(0, overlapEnd - overlapStart)
+    const overlapStart = Math.max(seg1.start, seg2.start);
+    const overlapEnd = Math.min(seg1.end, seg2.end);
+    return Math.max(0, overlapEnd - overlapStart);
   }
 
   /**
@@ -310,29 +313,29 @@ export class OverlapProcessor {
    * const merged = processor.mergeBrokenSentences(segments, 'zh-TW')
    */
   mergeBrokenSentences(segments, language = 'auto') {
-    if (segments.length === 0) return []
+    if (segments.length === 0) return [];
 
-    const merged = [{ ...segments[0] }]
+    const merged = [{ ...segments[0] }];
 
     for (let i = 1; i < segments.length; i++) {
-      const current = { ...segments[i] }
-      const previous = merged[merged.length - 1]
+      const current = { ...segments[i] };
+      const previous = merged[merged.length - 1];
 
       // 判斷是否應該合併
-      const shouldMerge = this._shouldMergeSegments(previous, current, language)
+      const shouldMerge = this._shouldMergeSegments(previous, current, language);
 
       if (shouldMerge) {
         // 合併文字與時間戳
-        previous.text = previous.text.trimEnd() + ' ' + current.text.trimStart()
-        previous.end = current.end
+        previous.text = previous.text.trimEnd() + ' ' + current.text.trimStart();
+        previous.end = current.end;
 
-        this._log(`[Merged] "${previous.text.slice(0, 50)}..."`)
+        this._log(`[Merged] "${previous.text.slice(0, 50)}..."`);
       } else {
-        merged.push(current)
+        merged.push(current);
       }
     }
 
-    return merged
+    return merged;
   }
 
   /**
@@ -348,7 +351,7 @@ export class OverlapProcessor {
    */
   _shouldMergeSegments(seg1, seg2, language) {
     // 使用 LanguageRules 進行多語言斷句判斷
-    return LanguageRules.shouldMerge(seg1, seg2, language, this.config.mergeTimeGap)
+    return LanguageRules.shouldMerge(seg1, seg2, language, this.config.mergeTimeGap);
   }
 
   /**
@@ -357,7 +360,7 @@ export class OverlapProcessor {
    * @returns {Array<Segment>} 所有已處理的 segments
    */
   getAllSegments() {
-    return this.processedSegments
+    return this.processedSegments;
   }
 
   /**
@@ -366,10 +369,10 @@ export class OverlapProcessor {
    * 用於處理新的影片或重新開始處理
    */
   reset() {
-    this._log('Resetting OverlapProcessor state')
-    this.previousSegments = null
-    this.processedSegments = []
-    this.chunkCount = 0
+    this._log('Resetting OverlapProcessor state');
+    this.previousSegments = null;
+    this.processedSegments = [];
+    this.chunkCount = 0;
   }
 
   /**
@@ -378,7 +381,7 @@ export class OverlapProcessor {
    */
   _log(...args) {
     if (this.config.debug) {
-      console.log('[OverlapProcessor]', ...args)
+      console.log('[OverlapProcessor]', ...args);
     }
   }
 }
@@ -399,4 +402,4 @@ export class OverlapProcessor {
  * @property {Array<Segment>} segments - 辨識片段
  */
 
-export default OverlapProcessor
+export default OverlapProcessor;

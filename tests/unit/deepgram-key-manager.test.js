@@ -25,9 +25,7 @@ describe('DeepgramKeyManager', () => {
     vi.mock('../../src/lib/crypto-utils.js', () => ({
       CryptoUtils: {
         encrypt: vi.fn((plaintext) => Promise.resolve(`encrypted_${plaintext}`)),
-        decrypt: vi.fn((ciphertext) =>
-          Promise.resolve(ciphertext.replace('encrypted_', ''))
-        ),
+        decrypt: vi.fn((ciphertext) => Promise.resolve(ciphertext.replace('encrypted_', ''))),
       },
     }));
 
@@ -43,29 +41,19 @@ describe('DeepgramKeyManager', () => {
 
     it('應該拒絕過短的 Key', () => {
       const shortKey = 'abc123';
-      expect(() => DeepgramKeyManager.validateFormat(shortKey)).toThrow(
-        BabelBridgeError
-      );
-      expect(() => DeepgramKeyManager.validateFormat(shortKey)).toThrow(
-        /長度必須/
-      );
+      expect(() => DeepgramKeyManager.validateFormat(shortKey)).toThrow(BabelBridgeError);
+      expect(() => DeepgramKeyManager.validateFormat(shortKey)).toThrow(/長度必須/);
     });
 
     it('應該拒絕包含非法字元的 Key', () => {
       // 合法字元部分需滿 32 字元，否則會先撞到長度檢查而測不到格式檢查
       const invalidKey = 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6!@#$%^&*()';
-      expect(() => DeepgramKeyManager.validateFormat(invalidKey)).toThrow(
-        BabelBridgeError
-      );
-      expect(() => DeepgramKeyManager.validateFormat(invalidKey)).toThrow(
-        /格式無效/
-      );
+      expect(() => DeepgramKeyManager.validateFormat(invalidKey)).toThrow(BabelBridgeError);
+      expect(() => DeepgramKeyManager.validateFormat(invalidKey)).toThrow(/格式無效/);
     });
 
     it('應該拒絕空字串', () => {
-      expect(() => DeepgramKeyManager.validateFormat('')).toThrow(
-        BabelBridgeError
-      );
+      expect(() => DeepgramKeyManager.validateFormat('')).toThrow(BabelBridgeError);
       expect(() => DeepgramKeyManager.validateFormat('')).toThrow(/不能為空/);
     });
 
@@ -100,9 +88,7 @@ describe('DeepgramKeyManager', () => {
         }),
       });
 
-      const result = await DeepgramKeyManager.verifyKey(
-        'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6'
-      );
+      const result = await DeepgramKeyManager.verifyKey('a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6');
 
       expect(result.valid).toBe(true);
       expect(result.projectUuid).toBe('test-uuid-1234');

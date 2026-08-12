@@ -220,12 +220,7 @@ function testConnection(model, language, apiKey) {
  */
 function formatResult(testCase, result) {
   const status = result.success ? '✅' : '❌';
-  const expected =
-    testCase.shouldWork === 'unknown'
-      ? '❓'
-      : testCase.shouldWork
-        ? '✅'
-        : '❌';
+  const expected = testCase.shouldWork === 'unknown' ? '❓' : testCase.shouldWork ? '✅' : '❌';
 
   return {
     test: testCase.description,
@@ -235,9 +230,7 @@ function formatResult(testCase, result) {
     actual: status,
     success: result.success,
     error: result.error || null,
-    match:
-      testCase.shouldWork === 'unknown' ||
-      result.success === testCase.shouldWork,
+    match: testCase.shouldWork === 'unknown' || result.success === testCase.shouldWork,
   };
 }
 
@@ -304,21 +297,14 @@ describe.skipIf(!API_KEY)('Deepgram API Connection Validation', () => {
     it(
       testCase.description,
       async () => {
-        const result = await testConnection(
-          testCase.model,
-          testCase.language,
-          API_KEY
-        );
+        const result = await testConnection(testCase.model, testCase.language, API_KEY);
 
         const formatted = formatResult(testCase, result);
         results.push(formatted);
 
         // 根據預期結果進行斷言
         if (testCase.shouldWork === true) {
-          expect(
-            result.success,
-            `預期連線成功，但失敗了: ${result.error}`
-          ).toBe(true);
+          expect(result.success, `預期連線成功，但失敗了: ${result.error}`).toBe(true);
         } else if (testCase.shouldWork === false) {
           expect(result.success, '預期連線失敗，但成功了').toBe(false);
         }

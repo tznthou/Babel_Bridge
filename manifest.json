@@ -3,16 +3,8 @@
   "name": "Babel Bridge",
   "version": "0.1.0",
   "description": "AI-powered real-time subtitle and translation for web videos",
-  "permissions": [
-    "tabCapture",
-    "activeTab",
-    "storage",
-    "scripting",
-    "offscreen"
-  ],
-  "host_permissions": [
-    "https://api.openai.com/*"
-  ],
+  "permissions": ["tabCapture", "activeTab", "storage", "scripting", "offscreen"],
+  "host_permissions": ["https://api.openai.com/*"],
   "background": {
     "service_worker": "src/background/service-worker.js",
     "type": "module"

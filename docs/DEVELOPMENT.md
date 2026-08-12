@@ -210,7 +210,7 @@ Chrome 自 2023 年起強制新 Extension 使用 V3。連帶限制：Service Wor
 
 所以選 `checkJs`：檢查現有 JSDoc，不改副檔名、不動 build pipeline，刪掉 `tsconfig.json` 就能完全退回。首次啟用清掉 43 個錯誤，其中抓出 3 處 JSDoc 與實作矛盾（詳見 CHANGELOG）。
 
-三個踩過的坑：`types/globals.d.ts` 要補 V8 的 `Error.captureStackTrace`、tabCapture 的 `mandatory` legacy constraint、Service Worker 的 `WorkerGlobalScope`——都是「runtime 真的有、只是標準定義沒收」，補宣告時要註明來源，不要拿它當消警告的萬用出口。`pcm-processor.js` 跑在 AudioWorkletGlobalScope，用檔頂 `/// <reference types="audioworklet" />` 隔離，不要塞進 `tsconfig` 的 `types` 陣列（會與 DOM 定義衝突）。`typecheck` 必須是獨立 script，不能串進 `lint`——ESLint 有 4 個既有 error 永遠 exit 1，串起來 `tsc` 會永遠跑不到。
+三個踩過的坑：`types/globals.d.ts` 要補 V8 的 `Error.captureStackTrace`、tabCapture 的 `mandatory` legacy constraint、Service Worker 的 `WorkerGlobalScope`——都是「runtime 真的有、只是標準定義沒收」，補宣告時要註明來源，不要拿它當消警告的萬用出口。`pcm-processor.js` 跑在 AudioWorkletGlobalScope，用檔頂 `/// <reference types="audioworklet" />` 隔離，不要塞進 `tsconfig` 的 `types` 陣列（會與 DOM 定義衝突）。`typecheck` 必須是獨立 script，不能串進 `lint`——當時 ESLint 有 4 個既有 error 永遠 exit 1，串起來 `tsc` 會永遠跑不到（那 4 個已清零，但獨立的理由不變，見下方「常用開發任務」）。
 
 重新評估的時機：Phase 3 的 UI 上框架且狀態變複雜、有第二位開發者加入、或跨 context 訊息類型再長一個量級。
 
@@ -227,15 +227,20 @@ npm run test:coverage     # 覆蓋率報告
 
 npm run lint              # ESLint
 npm run typecheck         # tsc --noEmit，檢查 JSDoc 型別（checkJs）
-npm run format            # Prettier
+npm run format            # Prettier 寫入
+npm run format:check      # Prettier 只檢查不寫入（PR 前用這個）
 
 npm run build             # 生產版本
 npm run package           # 產生 Chrome Web Store 上架 .zip
 ```
 
-`test:integration` 會帶 `REQUIRE_DEEPGRAM_KEY=1`。沒設金鑰時測試跳過而非失敗，CI 才不會因為缺金鑰紅掉。
+`test:integration` 會帶 `REQUIRE_DEEPGRAM_KEY=1`。沒設金鑰時測試跳過而非失敗，將來接 CI 才不會因為缺金鑰紅掉——本專案目前沒有 CI，四道閘門都是人工在 PR 前跑。
 
-`typecheck` 的基線是零錯誤，新冒出來的都是真訊號，不要用 `@ts-nocheck` 消音。它刻意不併進 `lint`：ESLint 目前有 4 個既有 error（`content-script` 的 `no-case-declarations`、`error-handler` 的 `no-useless-escape`、`crypto-utils` 的 `WorkerGlobalScope`、`pcm-processor` 的 `sampleRate`）會讓 `lint` 永遠 exit 1，串起來 `tsc` 就再也跑不到。後兩個與 `types/globals.d.ts` 解掉的是同一個根因，只是 ESLint 的 globals 設定沒跟上，尚未處理。
+`typecheck` 的基線是零錯誤，新冒出來的都是真訊號，不要用 `@ts-nocheck` 消音。
+
+`lint` 的基線是 **0 error / 165 warning**（warning 幾乎都是 `no-console`，屬既有債）。原本的 4 個 error 已於 2026-08-12 清零：兩個是真的該修的 code（`content-script` 的 `no-case-declarations`、`text-similarity` 的 `no-useless-escape`），另兩個是 `.eslintrc.json` 沒宣告執行環境全域——`crypto-utils` 的 `WorkerGlobalScope`、`pcm-processor` 的 AudioWorklet 全域，與 `types/globals.d.ts` 解掉的是同一個根因。補法用 `overrides` 精確綁到單一檔案，**不要圖省事全域開 `worker` env**：那樣一來 popup / content 誤用 worker-only API 就再也抓不到了。
+
+`typecheck` 仍刻意不併進 `lint`。理由不是「lint 現在會 exit 1」（已經不會了），而是兩者查的東西正交，任一方失敗都不該遮蔽另一方的結果。
 
 ---
 
@@ -390,7 +395,7 @@ fix: resolve overlap detection bug
 2. Commit 變更
 3. 推上去開 PR
 
-送 PR 前跑過 `npm run test` 與 `npm run lint`。
+送 PR 前四個都跑過：`npm run test`、`npm run lint`、`npm run typecheck`、`npm run format:check`。四個的基線都是全綠，所以任何一個紅掉都是這次改動造成的。
 
 ### 程式碼風格
 

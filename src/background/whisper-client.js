@@ -136,11 +136,9 @@ export class WhisperClient {
         throw error;
       }
 
-      throw new BabelBridgeError(
-        ErrorCodes.API_NETWORK_ERROR,
-        `Network error: ${error.message}`,
-        { originalError: error }
-      );
+      throw new BabelBridgeError(ErrorCodes.API_NETWORK_ERROR, `Network error: ${error.message}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -160,25 +158,19 @@ export class WhisperClient {
 
     switch (response.status) {
       case 401:
-        throw new BabelBridgeError(
-          ErrorCodes.API_KEY_INVALID,
-          'Invalid API Key',
-          { responseData: errorData }
-        );
+        throw new BabelBridgeError(ErrorCodes.API_KEY_INVALID, 'Invalid API Key', {
+          responseData: errorData,
+        });
 
       case 429:
-        throw new BabelBridgeError(
-          ErrorCodes.API_RATE_LIMIT,
-          'Rate limit exceeded',
-          { responseData: errorData }
-        );
+        throw new BabelBridgeError(ErrorCodes.API_RATE_LIMIT, 'Rate limit exceeded', {
+          responseData: errorData,
+        });
 
       case 400:
-        throw new BabelBridgeError(
-          ErrorCodes.WHISPER_UNSUPPORTED_FORMAT,
-          errorMessage,
-          { responseData: errorData }
-        );
+        throw new BabelBridgeError(ErrorCodes.WHISPER_UNSUPPORTED_FORMAT, errorMessage, {
+          responseData: errorData,
+        });
 
       default:
         throw new BabelBridgeError(

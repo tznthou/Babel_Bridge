@@ -189,12 +189,11 @@ export class AudioCapture {
         console.log('[AudioCapture] ✅ Offscreen Document 創建成功');
 
         // 等待 1 秒，給 Offscreen Document 時間載入
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
         // 再次確認是否真的存在
         const stillHasDocument = await chrome.offscreen.hasDocument();
         console.log('[AudioCapture] 🔍 創建後再次檢查 hasDocument:', stillHasDocument);
-
       } catch (error) {
         console.error('[AudioCapture] ❌ 創建 Offscreen Document 失敗');
         console.error('[AudioCapture] 錯誤類型:', error.name);

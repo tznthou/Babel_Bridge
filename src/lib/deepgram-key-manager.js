@@ -30,10 +30,7 @@ export class DeepgramKeyManager {
     const trimmedKey = apiKey?.trim();
 
     if (!trimmedKey) {
-      throw new BabelBridgeError(
-        ErrorCodes.DEEPGRAM_API_KEY_INVALID,
-        'Deepgram API Key 不能為空'
-      );
+      throw new BabelBridgeError(ErrorCodes.DEEPGRAM_API_KEY_INVALID, 'Deepgram API Key 不能為空');
     }
 
     // Deepgram Key 長度通常 >= 32 字元
@@ -155,11 +152,9 @@ export class DeepgramKeyManager {
 
       console.error('[DeepgramKeyManager] ✗ 驗證錯誤', error);
 
-      throw new BabelBridgeError(
-        ErrorCodes.DEEPGRAM_NETWORK_ERROR,
-        `網路錯誤: ${error.message}`,
-        { originalError: error }
-      );
+      throw new BabelBridgeError(ErrorCodes.DEEPGRAM_NETWORK_ERROR, `網路錯誤: ${error.message}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -209,9 +204,7 @@ export class DeepgramKeyManager {
    * @throws {BabelBridgeError} 未設定或解密失敗時拋出
    */
   static async getKey() {
-    const result = await chrome.storage.local.get(
-      STORAGE_KEYS.DEEPGRAM_API_KEY_ENCRYPTED
-    );
+    const result = await chrome.storage.local.get(STORAGE_KEYS.DEEPGRAM_API_KEY_ENCRYPTED);
 
     const encryptedKey = /** @type {string|undefined} */ (
       result[STORAGE_KEYS.DEEPGRAM_API_KEY_ENCRYPTED]
@@ -243,9 +236,7 @@ export class DeepgramKeyManager {
    * @returns {Promise<boolean>} 是否已設定
    */
   static async hasKey() {
-    const result = await chrome.storage.local.get(
-      STORAGE_KEYS.DEEPGRAM_API_KEY_ENCRYPTED
-    );
+    const result = await chrome.storage.local.get(STORAGE_KEYS.DEEPGRAM_API_KEY_ENCRYPTED);
     return !!result[STORAGE_KEYS.DEEPGRAM_API_KEY_ENCRYPTED];
   }
 

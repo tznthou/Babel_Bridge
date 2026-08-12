@@ -136,13 +136,16 @@ class PCMProcessor extends AudioWorkletProcessor {
     this.totalFrames++;
 
     // 發送到主執行緒
-    this.port.postMessage({
-      type: 'PCM_FRAME',
-      data: arrayBuffer,
-      frameIndex: this.totalFrames,
-      sampleCount: this.frameSize,
-      sampleRate: this.outputSampleRate,
-    }, [arrayBuffer]); // Transferable object
+    this.port.postMessage(
+      {
+        type: 'PCM_FRAME',
+        data: arrayBuffer,
+        frameIndex: this.totalFrames,
+        sampleCount: this.frameSize,
+        sampleRate: this.outputSampleRate,
+      },
+      [arrayBuffer]
+    ); // Transferable object
 
     // 每 100 frames 輸出統計（避免 console 污染）
     if (this.totalFrames % 100 === 0) {

@@ -15,7 +15,7 @@
   const results = {
     timestamp: new Date().toISOString(),
     url: window.location.href,
-    checks: {}
+    checks: {},
   };
 
   // ==================== 檢查 1: Content Script 注入 ====================
@@ -27,8 +27,8 @@
     hasSubtitleOverlay: typeof SubtitleOverlay !== 'undefined',
     hasVideoMonitor: typeof VideoMonitor !== 'undefined',
     scriptTags: Array.from(document.querySelectorAll('script'))
-      .filter(s => s.src.includes('babel') || s.src.includes('content'))
-      .map(s => s.src)
+      .filter((s) => s.src.includes('babel') || s.src.includes('content'))
+      .map((s) => s.src),
   };
 
   console.log('window.babelBridge:', results.checks.contentScriptInjected.hasBabelBridge);
@@ -53,13 +53,14 @@
     display: overlay?.style.display || 'N/A',
     innerHTML: overlay?.innerHTML || 'N/A',
     position: overlay ? overlay.getBoundingClientRect() : null,
-    allBabelElements: Array.from(document.querySelectorAll('[id*="babel"], [class*="babel"]'))
-      .map(el => ({
+    allBabelElements: Array.from(document.querySelectorAll('[id*="babel"], [class*="babel"]')).map(
+      (el) => ({
         tag: el.tagName,
         id: el.id,
         class: el.className,
-        visible: window.getComputedStyle(el).display !== 'none'
-      }))
+        visible: window.getComputedStyle(el).display !== 'none',
+      })
+    ),
   };
 
   console.log('容器存在:', results.checks.subtitleContainer.exists);
@@ -79,27 +80,26 @@
   console.log('─────────────────────────────────────');
 
   const stylesheets = Array.from(document.styleSheets);
-  const babelCSS = stylesheets.find(s => s.href && s.href.includes('subtitle-overlay'));
+  const babelCSS = stylesheets.find((s) => s.href && s.href.includes('subtitle-overlay'));
 
-  const allRules = stylesheets.flatMap(sheet => {
+  const allRules = stylesheets.flatMap((sheet) => {
     try {
       return Array.from(sheet.cssRules || []);
     } catch (e) {
       return [];
     }
   });
-  const babelRules = allRules.filter(r =>
-    r.selectorText && (
-      r.selectorText.includes('babel-bridge') ||
-      r.selectorText.includes('babel-subtitle')
-    )
+  const babelRules = allRules.filter(
+    (r) =>
+      r.selectorText &&
+      (r.selectorText.includes('babel-bridge') || r.selectorText.includes('babel-subtitle'))
   );
 
   results.checks.cssLoaded = {
     hasBabelCSS: !!babelCSS,
     cssHref: babelCSS?.href || 'N/A',
     ruleCount: babelRules.length,
-    rules: babelRules.map(r => r.selectorText)
+    rules: babelRules.map((r) => r.selectorText),
   };
 
   console.log('Babel Bridge CSS 存在:', results.checks.cssLoaded.hasBabelCSS);
@@ -158,7 +158,7 @@
   results.checks.manualTest = {
     testContainerCreated: true,
     testContainerId: 'babel-bridge-subtitle-test',
-    instruction: '請查看影片畫面底部是否有黑底白字的測試字幕'
+    instruction: '請查看影片畫面底部是否有黑底白字的測試字幕',
   };
 
   console.log('✅ 測試字幕已建立');
@@ -179,7 +179,7 @@
   results.checks.extensionContext = {
     chromeAvailable: typeof chrome !== 'undefined',
     runtimeAvailable: typeof chrome !== 'undefined' && typeof chrome.runtime !== 'undefined',
-    extensionId: (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime.id : 'N/A'
+    extensionId: typeof chrome !== 'undefined' && chrome.runtime ? chrome.runtime.id : 'N/A',
   };
 
   console.log('chrome 存在:', results.checks.extensionContext.chromeAvailable);
@@ -203,7 +203,7 @@
     currentTime: video?.currentTime || 0,
     duration: video?.duration || 0,
     paused: video?.paused || true,
-    src: video?.src || video?.currentSrc || 'N/A'
+    src: video?.src || video?.currentSrc || 'N/A',
   };
 
   console.log('影片元素存在:', results.checks.videoElement.exists);
@@ -245,7 +245,7 @@
     console.log('⚠️ 但字幕仍未顯示，可能是訊息傳遞問題');
   } else {
     console.log('發現以下問題：');
-    issues.forEach(issue => console.log(issue));
+    issues.forEach((issue) => console.log(issue));
   }
 
   console.log('');

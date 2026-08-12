@@ -90,7 +90,10 @@ export class DeepgramStreamClient {
       this.language = config.language;
     }
 
-    console.log('[DeepgramStreamClient] 🔄 初始化中...', { model: this.model, language: this.language });
+    console.log('[DeepgramStreamClient] 🔄 初始化中...', {
+      model: this.model,
+      language: this.language,
+    });
 
     // 重新開閂，讓 close() 過的實例仍可重新使用。
     // 只在 init() 開閂、不在 connect() 開閂：connect() 也被 scheduleReconnect()
@@ -200,7 +203,11 @@ export class DeepgramStreamClient {
     const wsUrl = `${DEEPGRAM_CONFIG.WEBSOCKET_URL}?${params.toString()}`;
 
     console.log('[DeepgramStreamClient] 🔗 WebSocket URL:', wsUrl);
-    console.log('[DeepgramStreamClient] 🔗 連線到 Deepgram...', { url: 'wss://api.deepgram.com/v1/listen', model: this.model, language: this.language });
+    console.log('[DeepgramStreamClient] 🔗 連線到 Deepgram...', {
+      url: 'wss://api.deepgram.com/v1/listen',
+      model: this.model,
+      language: this.language,
+    });
 
     return wsUrl;
   }
@@ -270,10 +277,7 @@ export class DeepgramStreamClient {
 
       if (data.type === 'Results') {
         try {
-          console.log(
-            '[DeepgramStreamClient] 🔍 完整 Results:',
-            JSON.stringify(data, null, 2)
-          );
+          console.log('[DeepgramStreamClient] 🔍 完整 Results:', JSON.stringify(data, null, 2));
         } catch (stringifyError) {
           console.warn('[DeepgramStreamClient] ⚠️ Results stringify 失敗:', stringifyError);
         }
@@ -564,9 +568,7 @@ export class DeepgramStreamClient {
    * @private
    */
   printStats() {
-    const duration = this.stats.endTime
-      ? (this.stats.endTime - this.stats.startTime) / 1000
-      : 0;
+    const duration = this.stats.endTime ? (this.stats.endTime - this.stats.startTime) / 1000 : 0;
 
     console.log('[DeepgramStreamClient] 📊 統計資訊:', {
       duration: `${duration.toFixed(2)}s`,

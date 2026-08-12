@@ -30,50 +30,50 @@
  * levenshteinDistance('abc', 'xyz')          // 返回 3
  */
 export function levenshteinDistance(source, target, options = {}) {
-  const { caseSensitive = false } = options
+  const { caseSensitive = false } = options;
 
   // 如果不區分大小寫，轉為小寫
-  const str1 = caseSensitive ? source : source.toLowerCase()
-  const str2 = caseSensitive ? target : target.toLowerCase()
+  const str1 = caseSensitive ? source : source.toLowerCase();
+  const str2 = caseSensitive ? target : target.toLowerCase();
 
-  const len1 = str1.length
-  const len2 = str2.length
+  const len1 = str1.length;
+  const len2 = str2.length;
 
   // 邊界條件：如果其中一個字串為空
-  if (len1 === 0) return len2
-  if (len2 === 0) return len1
+  if (len1 === 0) return len2;
+  if (len2 === 0) return len1;
 
   // 建立 DP 矩陣
   // dp[i][j] 表示 str1[0..i-1] 轉換成 str2[0..j-1] 的最少操作次數
   const dp = Array(len1 + 1)
     .fill(null)
-    .map(() => Array(len2 + 1).fill(0))
+    .map(() => Array(len2 + 1).fill(0));
 
   // 初始化第一行和第一列
   // dp[i][0] = i：表示將 str1[0..i-1] 刪除成空字串需要 i 次刪除操作
   // dp[0][j] = j：表示將空字串插入成 str2[0..j-1] 需要 j 次插入操作
   for (let i = 0; i <= len1; i++) {
-    dp[i][0] = i
+    dp[i][0] = i;
   }
   for (let j = 0; j <= len2; j++) {
-    dp[0][j] = j
+    dp[0][j] = j;
   }
 
   // 動態規劃填表
   for (let i = 1; i <= len1; i++) {
     for (let j = 1; j <= len2; j++) {
       // 如果當前字元相同，則不需要額外操作
-      const cost = str1[i - 1] === str2[j - 1] ? 0 : 1
+      const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
 
       dp[i][j] = Math.min(
-        dp[i - 1][j] + 1,      // 刪除 str1[i-1]
-        dp[i][j - 1] + 1,      // 插入 str2[j-1]
+        dp[i - 1][j] + 1, // 刪除 str1[i-1]
+        dp[i][j - 1] + 1, // 插入 str2[j-1]
         dp[i - 1][j - 1] + cost // 替換（如果不同）或不操作（如果相同）
-      )
+      );
     }
   }
 
-  return dp[len1][len2]
+  return dp[len1][len2];
 }
 
 /**
@@ -93,35 +93,31 @@ export function levenshteinDistance(source, target, options = {}) {
  * normalizeText('今天天氣很好！')   // '今天天氣很好'
  */
 export function normalizeText(text, options = {}) {
-  const {
-    removePunctuation = true,
-    toLowerCase = true,
-    removeWhitespace = false
-  } = options
+  const { removePunctuation = true, toLowerCase = true, removeWhitespace = false } = options;
 
-  let normalized = text
+  let normalized = text;
 
   // 移除標點符號（保留中英文字母、數字、空白）
   if (removePunctuation) {
     // 移除英文標點： . , ! ? ; : " ' ( ) [ ] { } - _ / \
     // 移除中文標點： 。 ， ！ ？ ； ： 「 」 『 』 （ ） 、
-    normalized = normalized.replace(/[.,!?;:'"()\[\]{}\-_/\\。，！？；：「」『』（）、]/g, '')
+    normalized = normalized.replace(/[.,!?;:'"()[\]{}\-_/\\。，！？；：「」『』（）、]/g, '');
   }
 
   // 轉換為小寫
   if (toLowerCase) {
-    normalized = normalized.toLowerCase()
+    normalized = normalized.toLowerCase();
   }
 
   // 處理空白
   if (removeWhitespace) {
-    normalized = normalized.replace(/\s+/g, '')
+    normalized = normalized.replace(/\s+/g, '');
   } else {
     // 將多個空白合併為單一空白
-    normalized = normalized.replace(/\s+/g, ' ').trim()
+    normalized = normalized.replace(/\s+/g, ' ').trim();
   }
 
-  return normalized
+  return normalized;
 }
 
 /**
@@ -147,41 +143,38 @@ export function normalizeText(text, options = {}) {
  * calculateSimilarity('Hello, World!', 'hello world', { normalize: true })  // 1.0
  */
 export function calculateSimilarity(text1, text2, options = {}) {
-  const {
-    normalize = true,
-    maxLength = Infinity
-  } = options
+  const { normalize = true, maxLength = Infinity } = options;
 
   // 正規化文字
-  let str1 = normalize ? normalizeText(text1) : text1
-  let str2 = normalize ? normalizeText(text2) : text2
+  let str1 = normalize ? normalizeText(text1) : text1;
+  let str2 = normalize ? normalizeText(text2) : text2;
 
   // 快速檢查：如果完全相同
-  if (str1 === str2) return 1.0
+  if (str1 === str2) return 1.0;
 
   // 快速檢查：長度差異過大（超過 50%）
-  const len1 = str1.length
-  const len2 = str2.length
-  const lengthDiff = Math.abs(len1 - len2)
-  const maxLen = Math.max(len1, len2)
+  const len1 = str1.length;
+  const len2 = str2.length;
+  const lengthDiff = Math.abs(len1 - len2);
+  const maxLen = Math.max(len1, len2);
 
   if (maxLen > 0 && lengthDiff / maxLen > 0.5) {
-    return 0.0  // 長度差異過大，直接判定為不相似
+    return 0.0; // 長度差異過大，直接判定為不相似
   }
 
   // 效能優化：限制比對長度
   if (maxLength < Infinity) {
-    str1 = str1.slice(0, maxLength)
-    str2 = str2.slice(0, maxLength)
+    str1 = str1.slice(0, maxLength);
+    str2 = str2.slice(0, maxLength);
   }
 
   // 計算 Levenshtein Distance
-  const distance = levenshteinDistance(str1, str2, { caseSensitive: false })
+  const distance = levenshteinDistance(str1, str2, { caseSensitive: false });
 
   // 轉換為相似度
-  const similarity = maxLen > 0 ? (maxLen - distance) / maxLen : 0.0
+  const similarity = maxLen > 0 ? (maxLen - distance) / maxLen : 0.0;
 
-  return Math.max(0, Math.min(1, similarity))  // 確保在 [0, 1] 範圍內
+  return Math.max(0, Math.min(1, similarity)); // 確保在 [0, 1] 範圍內
 }
 
 /**
@@ -201,33 +194,33 @@ export function calculateSimilarity(text1, text2, options = {}) {
  */
 export function quickSimilarityCheck(text1, text2, threshold = 0.8) {
   // 正規化
-  const str1 = normalizeText(text1)
-  const str2 = normalizeText(text2)
+  const str1 = normalizeText(text1);
+  const str2 = normalizeText(text2);
 
   // 完全相同
-  if (str1 === str2) return true
+  if (str1 === str2) return true;
 
   // 長度檢查
-  const len1 = str1.length
-  const len2 = str2.length
-  const lengthDiff = Math.abs(len1 - len2)
-  const maxLen = Math.max(len1, len2)
+  const len1 = str1.length;
+  const len2 = str2.length;
+  const lengthDiff = Math.abs(len1 - len2);
+  const maxLen = Math.max(len1, len2);
 
   // 長度差異超過 (1 - threshold) 倍，直接判定為不相似
-  if (maxLen > 0 && lengthDiff / maxLen > (1 - threshold)) {
-    return false
+  if (maxLen > 0 && lengthDiff / maxLen > 1 - threshold) {
+    return false;
   }
 
   // 簡單字元集合比對（共同字元比例）
-  const chars1 = new Set(str1)
-  const chars2 = new Set(str2)
-  const intersection = new Set([...chars1].filter(x => chars2.has(x)))
-  const union = new Set([...chars1, ...chars2])
+  const chars1 = new Set(str1);
+  const chars2 = new Set(str2);
+  const intersection = new Set([...chars1].filter((x) => chars2.has(x)));
+  const union = new Set([...chars1, ...chars2]);
 
-  const jaccardSimilarity = intersection.size / union.size
+  const jaccardSimilarity = intersection.size / union.size;
 
   // 如果 Jaccard 相似度低於閾值，可能不相似
-  return jaccardSimilarity >= (threshold * 0.6)  // 降低標準，避免誤判
+  return jaccardSimilarity >= threshold * 0.6; // 降低標準，避免誤判
 }
 
 // 導出所有函數作為預設物件（便於測試）
@@ -235,5 +228,5 @@ export default {
   levenshteinDistance,
   normalizeText,
   calculateSimilarity,
-  quickSimilarityCheck
-}
+  quickSimilarityCheck,
+};

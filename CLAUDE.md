@@ -16,9 +16,10 @@ npm run test              # 全部測試
 npm run test:unit         # 單元測試
 npm run test:integration  # 整合測試（需 Deepgram Key，未設則跳過）
 npm run test:coverage     # 覆蓋率
-npm run lint              # ESLint
+npm run lint              # ESLint，基線為 0 error（165 warning 為既有 no-console 債）
 npm run typecheck         # JSDoc 型別檢查（checkJs），基線為零錯誤
-npm run format            # Prettier
+npm run format            # Prettier 寫入
+npm run format:check      # Prettier 只檢查不寫入，基線為全部符合
 ```
 
 載入 Extension：`chrome://extensions/` → 開發人員模式 → 載入未封裝項目 → 選 `dist/`
