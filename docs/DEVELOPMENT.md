@@ -227,7 +227,8 @@ npm run test:coverage     # 覆蓋率報告
 
 npm run lint              # ESLint
 npm run typecheck         # tsc --noEmit，檢查 JSDoc 型別（checkJs）
-npm run format            # Prettier
+npm run format            # Prettier 寫入
+npm run format:check      # Prettier 只檢查不寫入（CI / PR 前用這個）
 
 npm run build             # 生產版本
 npm run package           # 產生 Chrome Web Store 上架 .zip
@@ -394,7 +395,7 @@ fix: resolve overlap detection bug
 2. Commit 變更
 3. 推上去開 PR
 
-送 PR 前跑過 `npm run test` 與 `npm run lint`。
+送 PR 前四個都跑過：`npm run test`、`npm run lint`、`npm run typecheck`、`npm run format:check`。四個的基線都是全綠，所以任何一個紅掉都是這次改動造成的。
 
 ### 程式碼風格
 
