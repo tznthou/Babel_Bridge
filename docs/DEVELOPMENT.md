@@ -228,13 +228,13 @@ npm run test:coverage     # 覆蓋率報告
 npm run lint              # ESLint
 npm run typecheck         # tsc --noEmit，檢查 JSDoc 型別（checkJs）
 npm run format            # Prettier 寫入
-npm run format:check      # Prettier 只檢查不寫入（CI / PR 前用這個）
+npm run format:check      # Prettier 只檢查不寫入（PR 前用這個）
 
 npm run build             # 生產版本
 npm run package           # 產生 Chrome Web Store 上架 .zip
 ```
 
-`test:integration` 會帶 `REQUIRE_DEEPGRAM_KEY=1`。沒設金鑰時測試跳過而非失敗，CI 才不會因為缺金鑰紅掉。
+`test:integration` 會帶 `REQUIRE_DEEPGRAM_KEY=1`。沒設金鑰時測試跳過而非失敗，將來接 CI 才不會因為缺金鑰紅掉——本專案目前沒有 CI，四道閘門都是人工在 PR 前跑。
 
 `typecheck` 的基線是零錯誤，新冒出來的都是真訊號，不要用 `@ts-nocheck` 消音。
 

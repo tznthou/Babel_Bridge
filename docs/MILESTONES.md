@@ -180,7 +180,7 @@ Whisper API 處理     2-3 秒
 | 問題 | 影響 | 優先度 |
 |------|------|--------|
 | 中英夾雜內容無可用配置（見 Phase 2.3） | 雙語影片辨識品質差 | 中 |
-| 整體測試覆蓋率 44%，未達 70% 目標 | 七個模組完全無測試（見下） | 中 |
+| 整體測試覆蓋率 43%，未達 70% 目標 | 七個模組加兩支 build 腳本完全無測試（見下） | 中 |
 | `tests/e2e/` 為空，Playwright 尚未寫任何測試 | 無端對端自動化驗證 | 中 |
 | Deepgram 延遲「2-3 秒」未經實測，且未區分 interim first-paint 與 final 定版 | 對外數據無依據，也影響 Phase 3 的 UI 決策 | 中 |
 | `SubtitleOverlay.initPositioning()` 可能跑兩次，洩漏 ResizeObserver 與 fullscreen listener | 影片 metadata 載入超過 5 秒時發生（見下） | 中 |
@@ -197,7 +197,9 @@ Whisper API 處理     2-3 秒
 
 ### 覆蓋率現況（2026-08-12 實測）
 
-整體 44%。分母已排除 `scripts/`（建置與除錯用的一次性腳本，非 Extension runtime）。
+整體 43%。分母只排除 `scripts/debug/`（純除錯用的一次性腳本）。
+
+`scripts/fix-paths.js` 與 `scripts/package.js` **刻意留在分母**。它們不是一次性腳本——前者每次 `npm run build` 都跑，後者每次 `npm run package` 都跑，是 production pipeline 的一部分。`fix-paths.js` 若靜默改錯路徑，`dist/` 會壞掉而 build 照樣回報 PASS，這種缺口正是需要被看見的。把它們排除出分母等於宣告這段不必測，數字會好看一點，代價是缺口從此隱形。
 
 **這裡刻意記整數。** v8 的 statement coverage 是按行推算的，任何重排程式碼的動作——換行、加大括號、跑一次 Prettier——都會改變分母，讓小數點後的數字失真。2026-08-12 就踩過：一顆純格式化的 commit 讓這張表每個被重排的檔案全部偏掉，而三個沒被重排的檔案數字紋風不動，因果一目了然。記到小數點只是把文件變成每次 refactor 都要跟著改的負債，而「離 70% 還差多遠」根本不需要那個精度。
 
@@ -215,6 +217,7 @@ Whisper API 處理     2-3 秒
 | `api-key-manager.js` | 42% | |
 | `crypto-utils.js` | 28% | |
 | `content-script.js`、`popup.js`、`offscreen.js`、`pcm-processor.js`、`whisper-client.js`、`audio-capture.js`、`error-handler.js` | **0%** | 完全無測試 |
+| `scripts/fix-paths.js`、`scripts/package.js` | **0%** | build / package pipeline，靜默失敗不會讓 build 紅掉 |
 
 ---
 

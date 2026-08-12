@@ -17,7 +17,7 @@
 #### Added
 - 補上突變測試揭露的兩條未覆蓋路徑 (`42a8d81`)
 - `npm run typecheck`：以 `checkJs` 檢查現有 JSDoc 的型別基線，不改副檔名、不動 build，刪掉 `tsconfig.json` 即可退回。同時新增 `types/globals.d.ts`，補上 V8 的 `Error.captureStackTrace`、tabCapture 的 `mandatory` legacy constraint、Service Worker 的 `WorkerGlobalScope` 三處全域宣告 (`08ba368`)
-- `npm run format:check`：Prettier 只檢查不寫入，讓格式一致性有東西在守，PR 前與 CI 都用它 (`8396336`)
+- `npm run format:check`：Prettier 只檢查不寫入，讓格式一致性有東西在守，PR 前跑（本專案目前沒有 CI，這條是人工閘門）(`8396336`)
 - `.prettierignore`：擋掉 `package-lock.json` 與產物目錄 (`8396336`)；後改為排除 `*.md`，因為 format 範圍改成掃全專案
 
 #### Changed
@@ -27,7 +27,7 @@
 - integration 測試改為缺 API Key 時跳過，而非直接失敗 (`a533409`)
 - `@types/chrome` 0.0.258 → 0.2.5，修好 `getMediaStreamId` 被定義成 callback-only 的誤報；`chrome.storage` 回傳值同時從 `any` 收緊為 `unknown`，讀值處補上型別標註 (`08ba368`)
 - 全 codebase 套用 Prettier（27 個檔案），`format` 範圍從 `src/` 擴大到 `tests/`、`scripts/`、根目錄設定檔與兩個 HTML。零語義變更，以格式化前後各 build 一次逐檔比對 dist/ 驗證：13 個經 bundler 的 JS 檔 minify 後位元組完全相同，另三個不經 bundler 的檔案差異逐一檢查（縮排、自閉合斜線、`<!DOCTYPE>` → `<!doctype>`）；`manifest.json` 以 `JSON.parse` 比對解析結果一致 (`8396336`)
-- coverage 分母排除 `scripts/`——建置與除錯用的一次性腳本不進 dist、永遠是 0%，留在分母只是虛壓數字。整體覆蓋率 41.40% → 44.29% (`87f8896`)
+- coverage 分母排除 `scripts/debug/`——純除錯用的一次性腳本不進 dist、永遠是 0%，留在分母只是虛壓數字。整體覆蓋率 41.40% → 43% (`87f8896`，範圍後續收窄)。`scripts/fix-paths.js` 與 `scripts/package.js` 刻意留在分母：它們每次 build / package 都會執行，是 production pipeline 的一部分，排除等於讓缺口隱形
 
 #### Fixed
 - `format` / `format:check` 改為掃全專案（`prettier .`）而非兩行重複的 glob 清單。舊清單漏掉 `types/` 與 `demo/`，其中 `demo/overlap-processor-demo.html` 實際上已經格式不符，但 `format:check` 照樣回報「全部符合」——一個報平安卻沒在看的閘門比沒有閘門更糟。同時 `.prettierignore` 的既有條目（`node_modules/`、`dist/`、`coverage/`）在舊的 explicit glob 下永遠碰不到，等於白寫；改用 `.` 之後才真正生效
