@@ -180,29 +180,40 @@ Whisper API 處理     2-3 秒
 | 問題 | 影響 | 優先度 |
 |------|------|--------|
 | 中英夾雜內容無可用配置（見 Phase 2.3） | 雙語影片辨識品質差 | 中 |
-| 整體測試覆蓋率 44.29%，未達 70% 目標 | 七個模組完全無測試（見下） | 中 |
+| 整體測試覆蓋率 44%，未達 70% 目標 | 七個模組完全無測試（見下） | 中 |
 | `tests/e2e/` 為空，Playwright 尚未寫任何測試 | 無端對端自動化驗證 | 中 |
 | Deepgram 延遲「2-3 秒」未經實測，且未區分 interim first-paint 與 final 定版 | 對外數據無依據，也影響 Phase 3 的 UI 決策 | 中 |
+| `SubtitleOverlay.initPositioning()` 可能跑兩次，洩漏 ResizeObserver 與 fullscreen listener | 影片 metadata 載入超過 5 秒時發生（見下） | 中 |
 | `offscreen.html` 第 8 行有 inline `<script>`，違反 CSP | 該段診斷 log 不執行，主功能正常 | 低 |
 | MCP chrome-devtools 控制的 Chrome 無法載入 Extension | 只能用正常 Chrome 視窗手動測試 | 低 |
 
+### `initPositioning()` 重複執行（2026-08-12 由跨 provider review 發現）
+
+`setupPositioning()` 在 `video.readyState < 2` 時走兩條路：註冊 `loadedmetadata` 監聽器（`{ once: true }`），外加一個 5 秒 timeout 當備援。timeout 那條有 `if (!this.resizeObserver)` 擋著，`loadedmetadata` 那條沒有。
+
+所以當影片 metadata 載入超過 5 秒（慢速網路、大檔緩衝），順序會是：timeout 先觸發跑一次 `initPositioning()` → metadata 稍後載入完成 → 監聽器再跑一次。第二次執行時 `this.resizeObserver` 被新的實例覆寫，**舊的沒有 disconnect**，並且三個 fullscreen 監聽器再註冊一遍（用的是 arrow function，無法 `removeEventListener`）。
+
+修法是 timeout 觸發時一併 `removeEventListener('loadedmetadata', handler)`，這需要把 callback 改成具名參照。**尚未修**——這是既有問題，不是近期改動引入的，留待處理 Phase 3 UI 時一起動 `SubtitleOverlay`。影響限於長時間緩衝的影片，且 `content-script.js` 目前覆蓋率 0%，改動要先有測試才安全。
+
 ### 覆蓋率現況（2026-08-12 實測）
 
-整體 44.29%。分母已排除 `scripts/`（建置與除錯用的一次性腳本，非 Extension runtime）。
+整體 44%。分母已排除 `scripts/`（建置與除錯用的一次性腳本，非 Extension runtime）。
+
+**這裡刻意記整數。** v8 的 statement coverage 是按行推算的，任何重排程式碼的動作——換行、加大括號、跑一次 Prettier——都會改變分母，讓小數點後的數字失真。2026-08-12 就踩過：一顆純格式化的 commit 讓這張表每個被重排的檔案全部偏掉，而三個沒被重排的檔案數字紋風不動，因果一目了然。記到小數點只是把文件變成每次 refactor 都要跟著改的負債，而「離 70% 還差多遠」根本不需要那個精度。
 
 | 模組 | Stmts | 備註 |
 |------|------:|------|
 | `config.js` | 100% | |
-| `subtitle-processor.js` | 93.5% | OverlapProcessor，早期文件誤記為 100% |
-| `deepgram-stream-client.js` | 90.8% | |
-| `text-similarity.js` | 89.1% | |
-| `deepgram-key-manager.js` | 85.8% | |
-| `errors.js` | 85.3% | |
-| `language-rules.js` | 67.8% | |
-| `service-worker.js` | 62.2% | |
-| `audio-chunker.js` | 42.5% | |
-| `api-key-manager.js` | 42.3% | |
-| `crypto-utils.js` | 27.3% | |
+| `subtitle-processor.js` | 92% | OverlapProcessor，早期文件誤記為 100% |
+| `deepgram-stream-client.js` | 91% | |
+| `text-similarity.js` | 89% | |
+| `deepgram-key-manager.js` | 85% | |
+| `errors.js` | 85% | |
+| `language-rules.js` | 69% | |
+| `service-worker.js` | 62% | |
+| `audio-chunker.js` | 42% | |
+| `api-key-manager.js` | 42% | |
+| `crypto-utils.js` | 28% | |
 | `content-script.js`、`popup.js`、`offscreen.js`、`pcm-processor.js`、`whisper-client.js`、`audio-capture.js`、`error-handler.js` | **0%** | 完全無測試 |
 
 ---

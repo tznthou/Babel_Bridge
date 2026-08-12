@@ -18,7 +18,7 @@
 - 補上突變測試揭露的兩條未覆蓋路徑 (`42a8d81`)
 - `npm run typecheck`：以 `checkJs` 檢查現有 JSDoc 的型別基線，不改副檔名、不動 build，刪掉 `tsconfig.json` 即可退回。同時新增 `types/globals.d.ts`，補上 V8 的 `Error.captureStackTrace`、tabCapture 的 `mandatory` legacy constraint、Service Worker 的 `WorkerGlobalScope` 三處全域宣告 (`08ba368`)
 - `npm run format:check`：Prettier 只檢查不寫入，讓格式一致性有東西在守，PR 前與 CI 都用它 (`8396336`)
-- `.prettierignore`：擋掉 `package-lock.json` 與產物目錄 (`8396336`)
+- `.prettierignore`：擋掉 `package-lock.json` 與產物目錄 (`8396336`)；後改為排除 `*.md`，因為 format 範圍改成掃全專案
 
 #### Changed
 - 整理專案資料夾結構為 `docs/` 與 `scripts/debug/`，收斂 `.gitignore` (`c31b8e4`)
@@ -30,6 +30,10 @@
 - coverage 分母排除 `scripts/`——建置與除錯用的一次性腳本不進 dist、永遠是 0%，留在分母只是虛壓數字。整體覆蓋率 41.40% → 44.29% (`87f8896`)
 
 #### Fixed
+- `format` / `format:check` 改為掃全專案（`prettier .`）而非兩行重複的 glob 清單。舊清單漏掉 `types/` 與 `demo/`，其中 `demo/overlap-processor-demo.html` 實際上已經格式不符，但 `format:check` 照樣回報「全部符合」——一個報平安卻沒在看的閘門比沒有閘門更糟。同時 `.prettierignore` 的既有條目（`node_modules/`、`dist/`、`coverage/`）在舊的 explicit glob 下永遠碰不到，等於白寫；改用 `.` 之後才真正生效
+- `docs/MILESTONES.md` 覆蓋率表改記整數並補上原因。v8 statement coverage 按行推算，Prettier 那顆重排讓表上每個被格式化的檔案數字全數偏移（未被重排的 `errors.js`、`audio-chunker.js`、`config.js` 則紋風不動，因果明確）——記到小數點只是讓文件變成每次 refactor 都要跟改的負債
+- `.eslintrc.json` 移除 `pcm-processor.js` override 裡沒用到的 `currentFrame` 與 `currentTime` 兩個全域宣告。多宣告的 `currentTime` 夠通用，會讓這個檔案將來打錯字的區域變數躲過 `no-undef`——正是同一顆 commit 拒絕全域開 `worker` env 的那個理由
+- `content-script.js` 的 switch 補齊其餘五個 `case` 的大括號，與 `service-worker.js` 既有寫法一致
 - 修復 Deepgram 測試套件 9 個失敗案例與 71 秒耗時 (`c738781`)
 - 接上 Deepgram KeepAlive 並移除 `configure` 死 code——KeepAlive 是官方機制，靜音超過 10 秒會斷線 (`16ced2e`)
 - 以世代編號與重連閂修復兩條連線生命週期併發問題 (`591b2e8`)

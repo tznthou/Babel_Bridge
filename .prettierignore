@@ -5,3 +5,7 @@ coverage/
 
 # npm 自己管，格式化它只會製造巨大且無意義的 diff
 package-lock.json
+
+# Markdown 由人工維護：中文表格的欄寬對齊、README 中英雙版的區塊對等，
+# 都是 Prettier 看不懂而會重排掉的東西
+*.md

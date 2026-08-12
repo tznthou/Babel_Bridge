@@ -637,17 +637,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[ContentScript] 收到訊息:', type);
 
   switch (type) {
-    case 'ENABLE_SUBTITLES':
+    case 'ENABLE_SUBTITLES': {
       // 啟用字幕功能
       sendResponse(enableSubtitles());
       break;
+    }
 
-    case 'DISABLE_SUBTITLES':
+    case 'DISABLE_SUBTITLES': {
       // 停用字幕功能
       sendResponse(disableSubtitles());
       break;
+    }
 
-    case MessageTypes.SUBTITLE_UPDATE:
+    case MessageTypes.SUBTITLE_UPDATE: {
       // 新版：使用 addSubtitleData 儲存 segments 並根據時間顯示
       if (!overlay) {
         console.warn('[ContentScript] 字幕未啟用，忽略 SUBTITLE_UPDATE');
@@ -657,8 +659,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       overlay.addSubtitleData(data);
       sendResponse({ success: true });
       break;
+    }
 
-    case MessageTypes.CLEAR_SUBTITLES:
+    case MessageTypes.CLEAR_SUBTITLES: {
       if (!overlay) {
         console.warn('[ContentScript] 字幕未啟用，忽略 CLEAR_SUBTITLES');
         sendResponse({ success: false, error: '字幕未啟用' });
@@ -667,8 +670,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       overlay.clear();
       sendResponse({ success: true });
       break;
+    }
 
-    case MessageTypes.STYLE_UPDATE:
+    case MessageTypes.STYLE_UPDATE: {
       if (!overlay) {
         console.warn('[ContentScript] 字幕未啟用，忽略 STYLE_UPDATE');
         sendResponse({ success: false, error: '字幕未啟用' });
@@ -677,6 +681,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // TODO: 更新字幕樣式
       sendResponse({ success: true });
       break;
+    }
 
     case 'GET_VIDEO_CURRENT_TIME': {
       // 回傳影片當前時間給 Background Service Worker

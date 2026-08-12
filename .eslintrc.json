@@ -30,9 +30,7 @@
       "globals": {
         "AudioWorkletProcessor": "readonly",
         "registerProcessor": "readonly",
-        "sampleRate": "readonly",
-        "currentFrame": "readonly",
-        "currentTime": "readonly"
+        "sampleRate": "readonly"
       }
     }
   ]
