@@ -663,7 +663,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true });
       break;
 
-    case 'GET_VIDEO_CURRENT_TIME':
+    case 'GET_VIDEO_CURRENT_TIME': {
       // 回傳影片當前時間給 Background Service Worker
       if (!overlay) {
         console.warn('[ContentScript] 字幕未啟用，無法取得影片時間');
@@ -674,6 +674,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.log('[ContentScript] 回報影片時間:', currentTime.toFixed(2), 's');
       sendResponse({ success: true, currentTime });
       break;
+    }
 
     default:
       console.warn('[ContentScript] 未知訊息類型:', type);

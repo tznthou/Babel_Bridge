@@ -20,5 +20,23 @@
   },
   "globals": {
     "chrome": "readonly"
-  }
+  },
+  "overrides": [
+    {
+      "files": ["src/lib/crypto-utils.js"],
+      "globals": {
+        "WorkerGlobalScope": "readonly"
+      }
+    },
+    {
+      "files": ["src/offscreen/pcm-processor.js"],
+      "globals": {
+        "AudioWorkletProcessor": "readonly",
+        "registerProcessor": "readonly",
+        "sampleRate": "readonly",
+        "currentFrame": "readonly",
+        "currentTime": "readonly"
+      }
+    }
+  ]
 }

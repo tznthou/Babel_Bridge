@@ -105,7 +105,7 @@ export function normalizeText(text, options = {}) {
   if (removePunctuation) {
     // 移除英文標點： . , ! ? ; : " ' ( ) [ ] { } - _ / \
     // 移除中文標點： 。 ， ！ ？ ； ： 「 」 『 』 （ ） 、
-    normalized = normalized.replace(/[.,!?;:'"()\[\]{}\-_/\\。，！？；：「」『』（）、]/g, '')
+    normalized = normalized.replace(/[.,!?;:'"()[\]{}\-_/\\。，！？；：「」『』（）、]/g, '')
   }
 
   // 轉換為小寫
