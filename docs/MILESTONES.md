@@ -180,14 +180,15 @@ Whisper API 處理     2-3 秒
 | 問題 | 影響 | 優先度 |
 |------|------|--------|
 | 中英夾雜內容無可用配置（見 Phase 2.3） | 雙語影片辨識品質差 | 中 |
-| 整體測試覆蓋率 41.47%，未達 70% 目標 | 六個模組完全無測試（見下） | 中 |
+| 整體測試覆蓋率 44.29%，未達 70% 目標 | 七個模組完全無測試（見下） | 中 |
 | `tests/e2e/` 為空，Playwright 尚未寫任何測試 | 無端對端自動化驗證 | 中 |
 | Deepgram 延遲「2-3 秒」未經實測，且未區分 interim first-paint 與 final 定版 | 對外數據無依據，也影響 Phase 3 的 UI 決策 | 中 |
-| `vitest.config.js` 未排除 `scripts/`，一次性腳本計入覆蓋率分母 | 整體數字被低估 | 低 |
 | `offscreen.html` 第 8 行有 inline `<script>`，違反 CSP | 該段診斷 log 不執行，主功能正常 | 低 |
 | MCP chrome-devtools 控制的 Chrome 無法載入 Extension | 只能用正常 Chrome 視窗手動測試 | 低 |
 
-### 覆蓋率現況（2026-08-11 實測）
+### 覆蓋率現況（2026-08-12 實測）
+
+整體 44.29%。分母已排除 `scripts/`（建置與除錯用的一次性腳本，非 Extension runtime）。
 
 | 模組 | Stmts | 備註 |
 |------|------:|------|
@@ -201,7 +202,7 @@ Whisper API 處理     2-3 秒
 | `service-worker.js` | 62.2% | |
 | `audio-chunker.js` | 42.5% | |
 | `api-key-manager.js` | 42.3% | |
-| `crypto-utils.js` | 27.5% | |
+| `crypto-utils.js` | 27.3% | |
 | `content-script.js`、`popup.js`、`offscreen.js`、`pcm-processor.js`、`whisper-client.js`、`audio-capture.js`、`error-handler.js` | **0%** | 完全無測試 |
 
 ---
